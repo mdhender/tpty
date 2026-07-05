@@ -1,5 +1,10 @@
 .idea/
 dem/
+prompts/
+
+# build products
+/hexover
+/mapgen
 
 # Hugo
 /public/
