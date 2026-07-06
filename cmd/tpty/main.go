@@ -266,6 +266,12 @@ func createPlayer(data, email, handle, province string) error {
 	if err != nil {
 		return err
 	}
+	// An absent or empty allowed set means no player can be placed. Failing is
+	// correct, but the GM needs to know what's wrong and how to fix it rather
+	// than a raw "no such file" or a misleading per-province "not allowed".
+	if len(allowed) == 0 {
+		return fmt.Errorf("no starting provinces are defined for this game; create %s (a JSON array of provinces in compact form, e.g. [\"(0,0)\",\"(1,-1)\"])", files.StartingProvinces)
+	}
 	if !allowed[canonical] {
 		return fmt.Errorf("starting province %s is not allowed for this game (see %s)", canonical, files.StartingProvinces)
 	}
@@ -641,9 +647,14 @@ func loadPlayers(path string) (*tpty.PlayerStore, error) {
 }
 
 // loadStartingProvinces reads the allowed starting provinces at path into a set,
-// validating that each entry is a canonical compact province string.
+// validating that each entry is a canonical compact province string. A missing
+// file yields an empty set, so callers can distinguish "no provinces defined"
+// (an actionable condition) from a genuine read/parse failure.
 func loadStartingProvinces(path string) (map[string]bool, error) {
 	buf, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return map[string]bool{}, nil
+	}
 	if err != nil {
 		return nil, fmt.Errorf("read starting provinces: %w", err)
 	}
