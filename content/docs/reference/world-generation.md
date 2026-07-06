@@ -93,7 +93,14 @@ provinces, and `n = 2` yields 19.
 
 ## Command
 
-World generation is provided by the `cmd/tpty` command.
+World generation is provided by the `cmd/tpty` command. It writes two files into
+the data directory:
+
+- `world.json` — the generated world: the master seeds, the ring count, and
+  every province with its coordinates and terrain.
+- `terrain-translation.json` — a map from each terrain name to a
+  [Worldographer](https://worldographer.com) tile name, for importing the world
+  into Worldographer.
 
 ## See also
 

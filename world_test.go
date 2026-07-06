@@ -73,6 +73,30 @@ func TestDifferentSeedsDifferentWorlds(t *testing.T) {
 	}
 }
 
+func TestTerrainTranslationMatchesTemplate(t *testing.T) {
+	want := map[string]string{
+		"Badlands": "Classic/Other Badlands",
+		"Desert":   "Classic/Flat Desert Sandy",
+		"Forests":  "Classic/Flat Forest Deciduous Heavy",
+		"Hills":    "Classic/Hills",
+		"Lake":     "Classic/Water Sea",
+		"Mountain": "Classic/Mountains",
+		"Plains":   "Classic/Flat Farmland",
+	}
+	if got := TerrainTranslation(); !reflect.DeepEqual(got, want) {
+		t.Errorf("TerrainTranslation() = %v, want %v", got, want)
+	}
+}
+
+func TestTerrainTranslationCoversEveryTerrain(t *testing.T) {
+	tt := TerrainTranslation()
+	for terrain := Mountain; terrain <= Badlands; terrain++ {
+		if tile, ok := tt[terrain.String()]; !ok || tile == "" {
+			t.Errorf("terrain %q missing from translation (tile=%q)", terrain, tile)
+		}
+	}
+}
+
 func TestTerrainStreamIsPositionKeyed(t *testing.T) {
 	// A province's terrain depends only on the seeds and its coordinates, not on
 	// how many rings were generated around it.

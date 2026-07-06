@@ -186,6 +186,18 @@ func generateWorld(rings int, data string, seeds tpty.Seeds) error {
 		return fmt.Errorf("write world: %w", err)
 	}
 
+	// Write the terrain-to-Worldographer tile translation alongside the world,
+	// so the world can be imported into Worldographer.
+	ttPath := filepath.Join(data, "terrain-translation.json")
+	ttBuf, err := json.MarshalIndent(tpty.TerrainTranslation(), "", "  ")
+	if err != nil {
+		return fmt.Errorf("encode terrain translation: %w", err)
+	}
+	if err := os.WriteFile(ttPath, ttBuf, 0o644); err != nil {
+		return fmt.Errorf("write terrain translation: %w", err)
+	}
+
 	fmt.Printf("wrote %d provinces to %s\n", len(world.Provinces), path)
+	fmt.Printf("wrote terrain translation to %s\n", ttPath)
 	return nil
 }

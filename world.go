@@ -46,6 +46,28 @@ func (t Terrain) MarshalJSON() ([]byte, error) {
 	return json.Marshal(t.String())
 }
 
+// worldographerTiles maps each terrain to its Worldographer tile name. It is
+// the source of truth for the terrain-translation.json export.
+var worldographerTiles = map[Terrain]string{
+	Badlands: "Classic/Other Badlands",
+	Desert:   "Classic/Flat Desert Sandy",
+	Forests:  "Classic/Flat Forest Deciduous Heavy",
+	Hills:    "Classic/Hills",
+	Lake:     "Classic/Water Sea",
+	Mountain: "Classic/Mountains",
+	Plains:   "Classic/Flat Farmland",
+}
+
+// TerrainTranslation returns the mapping from each terrain's name to its
+// Worldographer tile name, used to import a generated world into Worldographer.
+func TerrainTranslation() map[string]string {
+	m := make(map[string]string, len(worldographerTiles))
+	for terrain, tile := range worldographerTiles {
+		m[terrain.String()] = tile
+	}
+	return m
+}
+
 // Province is a single hex and its assigned terrain.
 type Province struct {
 	Q       int     `json:"q"`
