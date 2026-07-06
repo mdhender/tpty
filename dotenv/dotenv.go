@@ -18,6 +18,9 @@ const (
 
 // Load uses the `joho/godotenv` package to load environment files in the working directory.
 //
+// The env must be one of "development", "test", "production", or "claude".
+// The "claude" environment is reserved for the coding agent's local work.
+//
 // Load the following files depending on `env`, with the first file having the highest precedence,
 // and .env having the lowest precedence:
 //
@@ -33,7 +36,7 @@ func Load(env string) error {
 	if env == "" {
 		return ErrMissingEnvironment
 	}
-	if env != "development" && env != "test" && env != "production" {
+	if env != "development" && env != "test" && env != "production" && env != "claude" {
 		return ErrUnknownEnvironment
 	}
 

@@ -26,6 +26,17 @@ func TestLoadRejectsUnknownEnv(t *testing.T) {
 	}
 }
 
+func TestLoadAcceptsKnownEnvs(t *testing.T) {
+	// No .env files exist in the temp dir, so a known env loads nothing and
+	// returns nil; an unknown env is rejected before reaching that point.
+	t.Chdir(t.TempDir())
+	for _, env := range []string{"development", "test", "production", "claude"} {
+		if err := Load(env); err != nil {
+			t.Errorf("Load(%q) = %v, want nil", env, err)
+		}
+	}
+}
+
 // TestLoadPrecedence confirms that the highest-priority file present wins, since
 // godotenv.Load does not overwrite a variable already set by an earlier (higher
 // priority) file.
