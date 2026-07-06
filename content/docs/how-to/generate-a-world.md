@@ -1,17 +1,30 @@
 ---
 title: Generate a world
-weight: 1
+weight: 2
 ---
 
-Generating a world creates a new game — it is the only way to start one.
+Generating a world fills in the map for a game you have already created.
+
+## Before you start
+
+You need a game. If you have not created one yet:
 
 ```sh
-tpty world generate --rings 5 --data path/to/data --seed1 7 --seed2 13
+tpty game create --id my-game --data path/to/data
 ```
 
-This writes two files into the data directory:
+See [Create a game]({{< relref "/docs/how-to/create-a-game.md" >}}).
 
-- `world.json` — the game
+## Generate the world
+
+```sh
+tpty world generate --rings 5 --data path/to/data
+```
+
+`world generate` reads the game's master seeds from `game.json` and writes two
+files to the locations named in the manifest:
+
+- `world.json` — the generated world
 - `terrain-translation.json` — the terrain-to-Worldographer tile map used by
   [render]({{< relref "/docs/how-to/render-world-to-worldographer.md" >}})
 
@@ -21,22 +34,16 @@ This writes two files into the data directory:
   Must be greater than 0 and less than 100.
 - `--data` (required) — the game's data directory. May also be supplied as the
   `TPTY_DATA` environment variable.
-- `--seed1`, `--seed2` — the two master seeds. If omitted (or 0) they are chosen
-  at random and printed. The same seeds always produce the same world.
 
 ## Reproduce a world
 
-Generation prints the seeds it used:
-
-```
-seeds: seed1=7 seed2=13
-```
-
-To recreate the same world, pass those seeds back with `--seed1` and `--seed2`.
-A world is fully determined by its seeds and ring count, so nothing else needs to
-be saved.
+The seeds come from the game, not from this command. A world is fully determined
+by the game's master seeds and the ring count, so to recreate the same world,
+[create the game]({{< relref "/docs/how-to/create-a-game.md" >}}) with the same
+`--seed1` and `--seed2` and generate with the same `--rings`.
 
 ## See also
 
+- [Create a game]({{< relref "/docs/how-to/create-a-game.md" >}})
 - [Render a world to Worldographer]({{< relref "/docs/how-to/render-world-to-worldographer.md" >}})
 - [World generation reference]({{< relref "/docs/reference/world-generation.md" >}})

@@ -1,6 +1,6 @@
 ---
 title: Render a world to Worldographer
-weight: 2
+weight: 3
 ---
 
 This guide renders a generated world to a [Worldographer](https://worldographer.com)
@@ -14,10 +14,11 @@ files that `render` reads:
 - `world.json` — the world itself
 - `terrain-translation.json` — the map from each terrain to a Worldographer tile
 
-If you have not generated one yet:
+If you have not generated one yet, create a game and generate its world:
 
 ```sh
-tpty world generate --rings 3 --data path/to/data --seed1 7 --seed2 13
+tpty game create --id my-game --data path/to/data --seed1 7 --seed2 13
+tpty world generate --rings 3 --data path/to/data
 ```
 
 ## Render the world
@@ -35,7 +36,7 @@ open path/to/data/world.wxx
 The origin province is at the center of the map, and the world fills a hex disc;
 the rectangular corners around it are blank tiles.
 
-{{< figure src="/images/rendered-world.jpg" alt="A three-ring world in Worldographer: a mountain at the center, surrounded by three rings of forest, plains, hills, desert, badlands, and water, with blank tiles filling the rectangular corners" caption="A three-ring world (seeds 7 and 13), generated and rendered with the commands above." >}}
+{{< figure src="/images/rendered-world.jpg" alt="A three-ring world in Worldographer: a mountain at the center, surrounded by three rings of forest, plains, hills, desert, badlands, and water, with blank tiles filling the rectangular corners" caption="An example three-ring world, generated and rendered with commands like these." >}}
 
 ## Change how a terrain looks
 
