@@ -82,9 +82,6 @@ type World struct {
 	Provinces []Province `json:"provinces"`
 }
 
-// terrainStreamKey names the stream used to roll a province's terrain.
-const terrainStreamKey = "world.terrain"
-
 // GenerateWorld generates a world of the given number of rings from the master
 // seeds. The number of rings must satisfy 0 < rings < 100.
 //
@@ -107,7 +104,7 @@ func GenerateWorld(seeds Seeds, rings int) (*World, error) {
 	// its own coordinates, so the result is independent of iteration order.
 	for k := 1; k <= rings; k++ {
 		for _, h := range Ring(k) {
-			stream := seeds.Stream(terrainStreamKey, int64(h.Q), int64(h.R))
+			stream := seeds.Stream(KeyTerrain, Key(h.Q), Key(h.R))
 			w.Provinces = append(w.Provinces, Province{Q: h.Q, R: h.R, Terrain: rollTerrain(stream)})
 		}
 	}

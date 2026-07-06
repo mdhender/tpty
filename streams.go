@@ -18,14 +18,29 @@ type Seeds struct {
 	Seed2 uint64 `json:"seed2"`
 }
 
-// Stream returns a deterministic PRNG for the given key and leaf.
+// Key is one element of a stream's key path. The first element of a path is a
+// domain tag (a named constant naming the stream's purpose); the remaining
+// elements identify the specific instance — coerce identifiers such as
+// coordinates or ids to Key.
+type Key int64
+
+// Domain tags identify the purpose of a stream and are the first element of a
+// key path.
 //
-// A stream is derived by hashing the master seeds together with the key (a
-// string naming the purpose of the stream) and the leaf (values identifying the
-// specific item within that purpose, e.g. a province's coordinates). The hash
-// seeds a PCG source. Because a stream is fully determined by its key and leaf,
-// draws never depend on iteration order.
-func (s Seeds) Stream(key string, leaf ...int64) *rand.Rand {
+// This block is APPEND-ONLY and starts at 1 (0 is reserved as invalid). Never
+// reorder or insert constants: iota would renumber the rest and silently change
+// every existing game. See CLAUDE.md and
+// content/docs/explanation/counter-based-prng.md.
+const (
+	KeyTerrain Key = iota + 1 // world terrain generation
+)
+
+// Stream returns a deterministic PRNG for the given key path.
+//
+// A stream is derived by hashing the master seeds together with the key path via
+// SHA-256, then seeding a PCG source with the digest. Because a stream is fully
+// determined by its key path, draws never depend on iteration order.
+func (s Seeds) Stream(path ...Key) *rand.Rand {
 	h := sha256.New()
 
 	var buf [8]byte
@@ -38,14 +53,10 @@ func (s Seeds) Stream(key string, leaf ...int64) *rand.Rand {
 	putUint64(s.Seed1)
 	putUint64(s.Seed2)
 
-	// Length-prefixed key, so distinct (key, leaf) pairs cannot collide.
-	putUint64(uint64(len(key)))
-	_, _ = h.Write([]byte(key))
-
-	// Length-prefixed leaf values.
-	putUint64(uint64(len(leaf)))
-	for _, v := range leaf {
-		putUint64(uint64(v))
+	// Length-prefixed key path, so paths of different lengths cannot collide.
+	putUint64(uint64(len(path)))
+	for _, k := range path {
+		putUint64(uint64(k))
 	}
 
 	sum := h.Sum(nil)
