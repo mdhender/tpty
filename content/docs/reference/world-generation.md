@@ -104,4 +104,4 @@ the data directory:
 
 ## See also
 
-- [Glossary]({{< ref "/docs/reference/glossary.md" >}})
+- [Glossary]({{< relref "/docs/reference/glossary.md" >}})

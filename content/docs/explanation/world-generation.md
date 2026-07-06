@@ -5,7 +5,7 @@ weight: 1
 
 This page is *about* world generation: why it works the way it does. For the
 rules themselves — the coordinate system, the terrain table, the algorithm —
-see the [world generation reference]({{< ref "/docs/reference/world-generation.md" >}}).
+see the [world generation reference]({{< relref "/docs/reference/world-generation.md" >}}).
 Here we step back and discuss the choices behind them.
 
 ## Why a hex grid
@@ -131,5 +131,5 @@ solid.
 
 ## See also
 
-- [World generation reference]({{< ref "/docs/reference/world-generation.md" >}}) — the rules
-- [Glossary]({{< ref "/docs/reference/glossary.md" >}}) — terms used above
+- [World generation reference]({{< relref "/docs/reference/world-generation.md" >}}) — the rules
+- [Glossary]({{< relref "/docs/reference/glossary.md" >}}) — terms used above

@@ -5,7 +5,7 @@ weight: 2
 
 This page is *about* how the game draws random numbers. The observable promise —
 that the same master seeds always produce the same game — is stated in the
-[world generation reference]({{< ref "/docs/reference/world-generation.md" >}}).
+[world generation reference]({{< relref "/docs/reference/world-generation.md" >}}).
 Here we discuss how that promise is kept, why the design looks the way it does,
 and where it sits in the wider literature.
 
@@ -41,7 +41,7 @@ address, so one stream, so one terrain — fixed forever for a given pair of see
 Order independence is not something we carefully maintain; it falls out of the
 construction, because nothing in the address depends on iteration order. This is
 exactly why terrain is drawn per-province rather than from one sweep around the
-map (see the [world generation explanation]({{< ref "/docs/explanation/world-generation.md" >}})).
+map (see the [world generation explanation]({{< relref "/docs/explanation/world-generation.md" >}})).
 
 ## This is a known construction
 
@@ -156,8 +156,8 @@ need today, and the rest can wait without any loss of safety.
 
 ## See also
 
-- [World generation reference]({{< ref "/docs/reference/world-generation.md" >}}) — the determinism guarantee this design keeps
-- [World generation explanation]({{< ref "/docs/explanation/world-generation.md" >}}) — why terrain is addressed per province
+- [World generation reference]({{< relref "/docs/reference/world-generation.md" >}}) — the determinism guarantee this design keeps
+- [World generation explanation]({{< relref "/docs/explanation/world-generation.md" >}}) — why terrain is addressed per province
 - [Random123: counter-based RNGs (D.E. Shaw Research)](https://github.com/DEShawResearch/random123)
 - [NumPy SeedSequence & parallel generation (spawn / spawn_key)](https://numpy.org/doc/stable/reference/random/parallel.html)
 - [JAX jax.random (fold_in / split)](https://docs.jax.dev/en/latest/jax.random.html)

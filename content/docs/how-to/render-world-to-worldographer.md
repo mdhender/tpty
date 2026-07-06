@@ -65,4 +65,4 @@ tile to use for it, then render again.
 
 ## See also
 
-- [World generation reference]({{< ref "/docs/reference/world-generation.md" >}}) — the terrains and coordinate system
+- [World generation reference]({{< relref "/docs/reference/world-generation.md" >}}) — the terrains and coordinate system

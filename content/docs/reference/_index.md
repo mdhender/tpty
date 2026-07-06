@@ -8,7 +8,7 @@ sidebar:
 Information-oriented reference material — the rules of the game, described as they are.
 
 This section is being built up one rule at a time. The complete draft lives
-under [Resources]({{< ref "/docs/resources" >}}) until each rule has been
+under [Resources]({{< relref "/docs/resources" >}}) until each rule has been
 reviewed and moved here.
 
 {{< cards >}}

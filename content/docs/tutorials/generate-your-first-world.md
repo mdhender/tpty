@@ -80,7 +80,7 @@ start over any time.
 
 From here:
 
-- [Generate a world]({{< ref "/docs/how-to/generate-a-world.md" >}}) — all the
+- [Generate a world]({{< relref "/docs/how-to/generate-a-world.md" >}}) — all the
   options, once you know the basics
-- [Render a world to Worldographer]({{< ref "/docs/how-to/render-world-to-worldographer.md" >}}) — see your world as a map
-- [World generation reference]({{< ref "/docs/reference/world-generation.md" >}}) — the rules behind what you just made
+- [Render a world to Worldographer]({{< relref "/docs/how-to/render-world-to-worldographer.md" >}}) — see your world as a map
+- [World generation reference]({{< relref "/docs/reference/world-generation.md" >}}) — the rules behind what you just made

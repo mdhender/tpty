@@ -13,7 +13,7 @@ This writes two files into the data directory:
 
 - `world.json` — the game
 - `terrain-translation.json` — the terrain-to-Worldographer tile map used by
-  [render]({{< ref "/docs/how-to/render-world-to-worldographer.md" >}})
+  [render]({{< relref "/docs/how-to/render-world-to-worldographer.md" >}})
 
 ## Options
 
@@ -38,5 +38,5 @@ be saved.
 
 ## See also
 
-- [Render a world to Worldographer]({{< ref "/docs/how-to/render-world-to-worldographer.md" >}})
-- [World generation reference]({{< ref "/docs/reference/world-generation.md" >}})
+- [Render a world to Worldographer]({{< relref "/docs/how-to/render-world-to-worldographer.md" >}})
+- [World generation reference]({{< relref "/docs/reference/world-generation.md" >}})
