@@ -15,6 +15,7 @@ import (
 
 	"github.com/mdhender/tpty"
 	"github.com/mdhender/tpty/dotenv"
+	"github.com/mdhender/tpty/worldographer"
 	"github.com/peterbourgon/ff/v4"
 	"github.com/peterbourgon/ff/v4/ffhelp"
 )
@@ -99,8 +100,75 @@ func newWorldCommand(parent *ff.FlagSet, data *string) *ff.Command {
 		},
 	}
 
-	world.Subcommands = []*ff.Command{newWorldGenerateCommand(worldFlags, data)}
+	world.Subcommands = []*ff.Command{
+		newWorldGenerateCommand(worldFlags, data),
+		newWorldRenderCommand(worldFlags, data),
+	}
 	return world
+}
+
+// newWorldRenderCommand builds the "world render" command, which renders a
+// generated world to a Worldographer .wxx file in the data directory.
+func newWorldRenderCommand(parent *ff.FlagSet, data *string) *ff.Command {
+	fs := ff.NewFlagSet("render").SetParent(parent)
+
+	return &ff.Command{
+		Name:      "render",
+		Usage:     "tpty world render [FLAGS]",
+		ShortHelp: "render a generated world to Worldographer",
+		Flags:     fs,
+		Exec: func(ctx context.Context, args []string) error {
+			if len(args) > 0 {
+				return fmt.Errorf("unexpected argument %q: this command takes flags only, no positional arguments", args[0])
+			}
+			if *data == "" {
+				return fmt.Errorf("--data is required")
+			}
+			return renderWorld(*data)
+		},
+	}
+}
+
+// renderWorld reads world.json and terrain-translation.json from the data
+// directory and writes world.wxx (Worldographer) alongside them.
+func renderWorld(data string) error {
+	worldPath := filepath.Join(data, "world.json")
+	worldBuf, err := os.ReadFile(worldPath)
+	if err != nil {
+		return fmt.Errorf("read world: %w", err)
+	}
+	var world struct {
+		Provinces []worldographer.Province `json:"provinces"`
+	}
+	if err := json.Unmarshal(worldBuf, &world); err != nil {
+		return fmt.Errorf("parse %s: %w", worldPath, err)
+	}
+
+	ttPath := filepath.Join(data, "terrain-translation.json")
+	ttBuf, err := os.ReadFile(ttPath)
+	if err != nil {
+		return fmt.Errorf("read terrain translation: %w", err)
+	}
+	var translation map[string]string
+	if err := json.Unmarshal(ttBuf, &translation); err != nil {
+		return fmt.Errorf("parse %s: %w", ttPath, err)
+	}
+
+	outPath := filepath.Join(data, "world.wxx")
+	f, err := os.Create(outPath)
+	if err != nil {
+		return fmt.Errorf("create %s: %w", outPath, err)
+	}
+	defer f.Close()
+	if err := worldographer.Render(f, world.Provinces, translation); err != nil {
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("close %s: %w", outPath, err)
+	}
+
+	fmt.Printf("wrote %d provinces to %s\n", len(world.Provinces), outPath)
+	return nil
 }
 
 // newWorldGenerateCommand builds the "world generate" command.
