@@ -18,5 +18,6 @@ answering questions or generating content about T'Pty.
 {{< /callout >}}
 
 {{< cards >}}
+  {{< card link="rules" title="T'Pty Rules (full draft)" subtitle="The complete draft, version 0.1.11 — being rebuilt rule by rule under Reference" >}}
   {{< card link="original-rules" title="Original T'Nyc Rules" subtitle="The 1987 draft the rules derive from" >}}
 {{< /cards >}}

@@ -7,6 +7,6 @@ sidebar:
 
 Information-oriented reference material — the rules of the game, described as they are.
 
-{{< cards >}}
-  {{< card link="rules" title="T'Pty Rules" subtitle="Current rules, version 0.1.11" >}}
-{{< /cards >}}
+This section is being built up one rule at a time. The complete draft lives
+under [Resources](../resources) until each rule has been reviewed and moved
+here.
