@@ -1,6 +1,6 @@
 ---
 title: Render a world to Worldographer
-weight: 1
+weight: 2
 ---
 
 This guide renders a generated world to a [Worldographer](https://worldographer.com)
@@ -17,7 +17,7 @@ files that `render` reads:
 If you have not generated one yet:
 
 ```sh
-tpty world generate --rings 5 --data path/to/data --seed1 7 --seed2 13
+tpty world generate --rings 3 --data path/to/data --seed1 7 --seed2 13
 ```
 
 ## Render the world
@@ -34,6 +34,8 @@ open path/to/data/world.wxx
 
 The origin province is at the center of the map, and the world fills a hex disc;
 the rectangular corners around it are blank tiles.
+
+{{< figure src="/images/rendered-world.jpg" alt="A three-ring world in Worldographer: a mountain at the center, surrounded by three rings of forest, plains, hills, desert, badlands, and water, with blank tiles filling the rectangular corners" caption="A three-ring world (seeds 7 and 13), generated and rendered with the commands above." >}}
 
 ## Change how a terrain looks
 
