@@ -13,4 +13,5 @@ task. Come here when you already know the basics and need to get something done.
   {{< card link="generate-a-world" title="Generate a world" subtitle="Fill in the map for a game you have created" >}}
   {{< card link="render-world-to-worldographer" title="Render a world to Worldographer" subtitle="Turn a generated world into a Worldographer map" >}}
   {{< card link="recruit-players" title="Recruit players and add them to a game" subtitle="Offer starting provinces and add each player" >}}
+  {{< card link="list-and-inspect-players" title="List and inspect players" subtitle="Review the players in a game and resend passwords" >}}
 {{< /cards >}}

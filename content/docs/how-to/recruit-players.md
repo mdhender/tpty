@@ -75,5 +75,6 @@ that file private.
 
 ## See also
 
+- [List and inspect players]({{< relref "/docs/how-to/list-and-inspect-players.md" >}})
 - [Players reference]({{< relref "/docs/reference/players.md" >}})
 - [Create a game]({{< relref "/docs/how-to/create-a-game.md" >}})

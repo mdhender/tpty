@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"text/tabwriter"
 
 	"github.com/mdhender/tpty"
 	"github.com/mdhender/tpty/dotenv"
@@ -56,7 +57,9 @@ func main() {
 //	├── game
 //	│   └── create
 //	├── player
-//	│   └── create
+//	│   ├── create
+//	│   ├── list
+//	│   └── show
 //	└── world
 //	    ├── generate
 //	    └── render
@@ -201,6 +204,8 @@ func newPlayerCommand(parent *ff.FlagSet, data *string) *ff.Command {
 
 	player.Subcommands = []*ff.Command{
 		newPlayerCreateCommand(playerFlags, data),
+		newPlayerListCommand(playerFlags, data),
+		newPlayerShowCommand(playerFlags, data),
 	}
 	return player
 }
@@ -283,6 +288,115 @@ func createPlayer(data, email, handle, province string) error {
 	fmt.Printf("  province: %s\n", player.StartingProvince)
 	fmt.Printf("  password: %s\n", player.Password)
 	fmt.Printf("wrote %s\n", files.Players)
+	return nil
+}
+
+// newPlayerListCommand builds the "player list" command, which lists the players
+// in a game.
+func newPlayerListCommand(parent *ff.FlagSet, data *string) *ff.Command {
+	fs := ff.NewFlagSet("list").SetParent(parent)
+
+	return &ff.Command{
+		Name:      "list",
+		Usage:     "tpty player list [FLAGS]",
+		ShortHelp: "list the players in a game",
+		Flags:     fs,
+		Exec: func(ctx context.Context, args []string) error {
+			if len(args) > 0 {
+				return fmt.Errorf("unexpected argument %q: this command takes flags only, no positional arguments", args[0])
+			}
+			if *data == "" {
+				return fmt.Errorf("--data is required")
+			}
+			return listPlayers(*data)
+		},
+	}
+}
+
+// listPlayers prints a table of the game's players (id, handle, email, and
+// starting province). Passwords are shown only by "player show".
+func listPlayers(data string) error {
+	game, files, err := loadGame(data)
+	if err != nil {
+		return err
+	}
+	store, err := loadPlayers(files.Players)
+	if err != nil {
+		return err
+	}
+
+	if len(store.Players) == 0 {
+		fmt.Printf("game %q has no players\n", game.ID)
+		return nil
+	}
+
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(w, "ID\tHANDLE\tEMAIL\tSTARTING PROVINCE")
+	for _, p := range store.Players {
+		fmt.Fprintf(w, "%d\t%s\t%s\t%s\n", p.ID, p.Handle, p.Email, p.StartingProvince)
+	}
+	return w.Flush()
+}
+
+// newPlayerShowCommand builds the "player show" command, which shows one player's
+// details, looked up by id or handle.
+func newPlayerShowCommand(parent *ff.FlagSet, data *string) *ff.Command {
+	fs := ff.NewFlagSet("show").SetParent(parent)
+	id := fs.IntLong("id", 0, "the player's `id`")
+	handle := fs.StringLong("handle", "", "the player's `handle`")
+
+	return &ff.Command{
+		Name:      "show",
+		Usage:     "tpty player show [FLAGS]",
+		ShortHelp: "show a player's details",
+		Flags:     fs,
+		Exec: func(ctx context.Context, args []string) error {
+			if len(args) > 0 {
+				return fmt.Errorf("unexpected argument %q: this command takes flags only, no positional arguments", args[0])
+			}
+			if *data == "" {
+				return fmt.Errorf("--data is required")
+			}
+			switch {
+			case *id != 0 && *handle != "":
+				return fmt.Errorf("provide only one of --id or --handle")
+			case *id == 0 && *handle == "":
+				return fmt.Errorf("provide --id or --handle")
+			}
+			return showPlayer(*data, *id, *handle)
+		},
+	}
+}
+
+// showPlayer prints one player's details, including the password, looked up by id
+// (when id != 0) or by handle.
+func showPlayer(data string, id int, handle string) error {
+	game, files, err := loadGame(data)
+	if err != nil {
+		return err
+	}
+	store, err := loadPlayers(files.Players)
+	if err != nil {
+		return err
+	}
+
+	var player tpty.Player
+	var ok bool
+	if id != 0 {
+		if player, ok = store.ByID(id); !ok {
+			return fmt.Errorf("no player with id %d", id)
+		}
+	} else {
+		if player, ok = store.ByHandle(handle); !ok {
+			return fmt.Errorf("no player with handle %q", handle)
+		}
+	}
+
+	fmt.Printf("player %d in game %q\n", player.ID, game.ID)
+	fmt.Printf("  handle:   %s\n", player.Handle)
+	fmt.Printf("  email:    %s\n", player.Email)
+	fmt.Printf("  province: %s\n", player.StartingProvince)
+	fmt.Printf("  password: %s\n", player.Password)
 	return nil
 }
 
