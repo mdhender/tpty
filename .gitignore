@@ -2,9 +2,15 @@
 dem/
 prompts/
 
+# Environment files (see dotenv). The *.local files may hold secrets, so
+# they are explicity ignored; shared .env and .env.<env> files are committed.
+.env.local
+.env.*.local
+
 # build products
 /hexover
 /mapgen
+/tpty
 
 # Hugo
 /public/

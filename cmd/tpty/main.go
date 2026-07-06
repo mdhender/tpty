@@ -14,20 +14,37 @@ import (
 	"path/filepath"
 
 	"github.com/mdhender/tpty"
+	"github.com/mdhender/tpty/dotenv"
 	"github.com/peterbourgon/ff/v4"
 	"github.com/peterbourgon/ff/v4/ffhelp"
 )
 
 func main() {
+	// Load .env files before parsing flags so ff reads TPTY_* variables sourced
+	// from them. TPTY_ENV selects which files load (see dotenv) and is read
+	// straight from the environment — not a flag — because it must be known
+	// before any flag is parsed. It defaults to development.
+	env := os.Getenv("TPTY_ENV")
+	if env == "" {
+		env = "development"
+	}
+	if err := dotenv.Load(env); err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "error: load %q environment: %v\n", env, err)
+		os.Exit(1)
+	}
+
 	root := newRootCommand()
 
-	err := root.ParseAndRun(context.Background(), os.Args[1:])
+	// Resolve flags from TPTY_-prefixed environment variables (sourced from the
+	// .env files loaded above) when not given on the command line. For example,
+	// --data is filled from TPTY_DATA. Command-line flags take precedence.
+	err := root.ParseAndRun(context.Background(), os.Args[1:], ff.WithEnvVarPrefix("TPTY"))
 	switch {
 	case errors.Is(err, ff.ErrHelp):
-		fmt.Fprintf(os.Stderr, "%s\n", ffhelp.Command(root))
+		_, _ = fmt.Fprintf(os.Stderr, "%s\n", ffhelp.Command(root))
 		os.Exit(0)
 	case err != nil:
-		fmt.Fprintf(os.Stderr, "tpty: %v\n", err)
+		_, _ = fmt.Fprintf(os.Stderr, "tpty: %v\n", err)
 		os.Exit(1)
 	}
 }
