@@ -53,8 +53,11 @@ func main() {
 // newRootCommand builds the tpty command tree:
 //
 //	tpty
+//	├── game
+//	│   └── create
 //	└── world
-//	    └── generate
+//	    ├── generate
+//	    └── render
 //
 // Commands are noun-verb (resource then action). All commands take flags only;
 // positional arguments are rejected.
@@ -81,8 +84,101 @@ func newRootCommand() *ff.Command {
 		},
 	}
 
-	root.Subcommands = []*ff.Command{newWorldCommand(rootFlags, data)}
+	root.Subcommands = []*ff.Command{
+		newGameCommand(rootFlags, data),
+		newWorldCommand(rootFlags, data),
+	}
 	return root
+}
+
+// newGameCommand builds the "game" resource command and its subcommands.
+func newGameCommand(parent *ff.FlagSet, data *string) *ff.Command {
+	gameFlags := ff.NewFlagSet("game").SetParent(parent)
+
+	game := &ff.Command{
+		Name:      "game",
+		Usage:     "tpty game [FLAGS] SUBCOMMAND ...",
+		ShortHelp: "create and inspect games",
+		Flags:     gameFlags,
+		Exec: func(ctx context.Context, args []string) error {
+			// No subcommand selected; show help.
+			return ff.ErrHelp
+		},
+	}
+
+	game.Subcommands = []*ff.Command{
+		newGameCreateCommand(gameFlags, data),
+	}
+	return game
+}
+
+// newGameCreateCommand builds the "game create" command, which writes a new
+// game.json manifest into the data directory.
+//
+// See the reference documentation at content/docs/reference/games.md.
+func newGameCreateCommand(parent *ff.FlagSet, data *string) *ff.Command {
+	fs := ff.NewFlagSet("create").SetParent(parent)
+	id := fs.StringLong("id", "", "the game's `id` (a slug naming the game)")
+	seed1 := fs.Uint64Long("seed1", 0, "first master `seed` (0 = choose at random)")
+	seed2 := fs.Uint64Long("seed2", 0, "second master `seed` (0 = choose at random)")
+
+	return &ff.Command{
+		Name:      "create",
+		Usage:     "tpty game create [FLAGS]",
+		ShortHelp: "create a new game",
+		Flags:     fs,
+		Exec: func(ctx context.Context, args []string) error {
+			if len(args) > 0 {
+				return fmt.Errorf("unexpected argument %q: this command takes flags only, no positional arguments", args[0])
+			}
+			if *data == "" {
+				return fmt.Errorf("--data is required")
+			}
+			if err := tpty.ValidateGameID(*id); err != nil {
+				return err
+			}
+
+			// Resolve master seeds, choosing random values where unset.
+			s1, s2 := *seed1, *seed2
+			if s1 == 0 {
+				var err error
+				if s1, err = randomSeed(); err != nil {
+					return err
+				}
+			}
+			if s2 == 0 {
+				var err error
+				if s2, err = randomSeed(); err != nil {
+					return err
+				}
+			}
+
+			return createGame(*data, *id, tpty.Seeds{Seed1: s1, Seed2: s2})
+		},
+	}
+}
+
+// createGame writes a new game.json manifest into the data directory. It refuses
+// to overwrite an existing game.
+func createGame(data, id string, seeds tpty.Seeds) error {
+	path := filepath.Join(data, "game.json")
+	if _, err := os.Stat(path); err == nil {
+		return fmt.Errorf("%s already exists", path)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("stat %s: %w", path, err)
+	}
+
+	game, err := tpty.NewGame(id, seeds)
+	if err != nil {
+		return err
+	}
+	if err := writeJSON(path, game); err != nil {
+		return err
+	}
+
+	fmt.Printf("created game %q (seed1=%d seed2=%d)\n", id, seeds.Seed1, seeds.Seed2)
+	fmt.Printf("wrote %s\n", path)
+	return nil
 }
 
 // newWorldCommand builds the "world" resource command and its subcommands.
@@ -107,8 +203,66 @@ func newWorldCommand(parent *ff.FlagSet, data *string) *ff.Command {
 	return world
 }
 
+// newWorldGenerateCommand builds the "world generate" command. It reads the
+// game's master seeds from the game.json manifest in the data directory and
+// writes the generated world to the manifest's world path.
+//
+// See the reference documentation at
+// content/docs/reference/world-generation.md for the rules this implements.
+func newWorldGenerateCommand(parent *ff.FlagSet, data *string) *ff.Command {
+	fs := ff.NewFlagSet("generate").SetParent(parent)
+	rings := fs.IntLong("rings", 0, "number of `rings` to generate (0 < rings < 100)")
+
+	return &ff.Command{
+		Name:      "generate",
+		Usage:     "tpty world generate [FLAGS]",
+		ShortHelp: "generate a new world",
+		Flags:     fs,
+		Exec: func(ctx context.Context, args []string) error {
+			// This command takes flags only; reject positional arguments.
+			if len(args) > 0 {
+				return fmt.Errorf("unexpected argument %q: this command takes flags only, no positional arguments", args[0])
+			}
+			if *rings <= 0 || *rings >= 100 {
+				return fmt.Errorf("--rings must be > 0 and < 100, got %d", *rings)
+			}
+			if *data == "" {
+				return fmt.Errorf("--data is required")
+			}
+			return generateWorld(*rings, *data)
+		},
+	}
+}
+
+// generateWorld reads game.json from the data directory, generates a world from
+// the game's master seeds, and writes world.json and terrain-translation.json to
+// the locations named in the manifest.
+func generateWorld(rings int, data string) error {
+	game, files, err := loadGame(data)
+	if err != nil {
+		return err
+	}
+
+	world, err := tpty.GenerateWorld(game.Seeds, rings)
+	if err != nil {
+		return err
+	}
+
+	if err := writeJSON(files.World, world); err != nil {
+		return fmt.Errorf("write world: %w", err)
+	}
+	if err := writeJSON(files.TerrainTranslation, tpty.TerrainTranslation()); err != nil {
+		return fmt.Errorf("write terrain translation: %w", err)
+	}
+
+	fmt.Printf("generated world for game %q (seed1=%d seed2=%d)\n", game.ID, game.Seeds.Seed1, game.Seeds.Seed2)
+	fmt.Printf("wrote %d provinces to %s\n", len(world.Provinces), files.World)
+	fmt.Printf("wrote terrain translation to %s\n", files.TerrainTranslation)
+	return nil
+}
+
 // newWorldRenderCommand builds the "world render" command, which renders a
-// generated world to a Worldographer .wxx file in the data directory.
+// generated world to a Worldographer .wxx file beside the world file.
 func newWorldRenderCommand(parent *ff.FlagSet, data *string) *ff.Command {
 	fs := ff.NewFlagSet("render").SetParent(parent)
 
@@ -129,11 +283,15 @@ func newWorldRenderCommand(parent *ff.FlagSet, data *string) *ff.Command {
 	}
 }
 
-// renderWorld reads world.json and terrain-translation.json from the data
-// directory and writes world.wxx (Worldographer) alongside them.
+// renderWorld reads the world and terrain-translation files named in the game's
+// manifest and writes world.wxx (Worldographer) beside the world file.
 func renderWorld(data string) error {
-	worldPath := filepath.Join(data, "world.json")
-	worldBuf, err := os.ReadFile(worldPath)
+	_, files, err := loadGame(data)
+	if err != nil {
+		return err
+	}
+
+	worldBuf, err := os.ReadFile(files.World)
 	if err != nil {
 		return fmt.Errorf("read world: %w", err)
 	}
@@ -141,20 +299,19 @@ func renderWorld(data string) error {
 		Provinces []worldographer.Province `json:"provinces"`
 	}
 	if err := json.Unmarshal(worldBuf, &world); err != nil {
-		return fmt.Errorf("parse %s: %w", worldPath, err)
+		return fmt.Errorf("parse %s: %w", files.World, err)
 	}
 
-	ttPath := filepath.Join(data, "terrain-translation.json")
-	ttBuf, err := os.ReadFile(ttPath)
+	ttBuf, err := os.ReadFile(files.TerrainTranslation)
 	if err != nil {
 		return fmt.Errorf("read terrain translation: %w", err)
 	}
 	var translation map[string]string
 	if err := json.Unmarshal(ttBuf, &translation); err != nil {
-		return fmt.Errorf("parse %s: %w", ttPath, err)
+		return fmt.Errorf("parse %s: %w", files.TerrainTranslation, err)
 	}
 
-	outPath := filepath.Join(data, "world.wxx")
+	outPath := filepath.Join(filepath.Dir(files.World), "world.wxx")
 	f, err := os.Create(outPath)
 	if err != nil {
 		return fmt.Errorf("create %s: %w", outPath, err)
@@ -171,53 +328,35 @@ func renderWorld(data string) error {
 	return nil
 }
 
-// newWorldGenerateCommand builds the "world generate" command.
-//
-// See the reference documentation at
-// content/docs/reference/world-generation.md for the rules this implements.
-func newWorldGenerateCommand(parent *ff.FlagSet, data *string) *ff.Command {
-	fs := ff.NewFlagSet("generate").SetParent(parent)
-	rings := fs.IntLong("rings", 0, "number of `rings` to generate (0 < rings < 100)")
-	seed1 := fs.Uint64Long("seed1", 0, "first master `seed` (0 = choose at random)")
-	seed2 := fs.Uint64Long("seed2", 0, "second master `seed` (0 = choose at random)")
-
-	return &ff.Command{
-		Name:      "generate",
-		Usage:     "tpty world generate [FLAGS]",
-		ShortHelp: "generate a new world",
-		Flags:     fs,
-		Exec: func(ctx context.Context, args []string) error {
-			// This command takes flags only; reject positional arguments.
-			if len(args) > 0 {
-				return fmt.Errorf("unexpected argument %q: this command takes flags only, no positional arguments", args[0])
-			}
-			if *rings <= 0 || *rings >= 100 {
-				return fmt.Errorf("--rings must be > 0 and < 100, got %d", *rings)
-			}
-			if *data == "" {
-				return fmt.Errorf("--data is required")
-			}
-
-			// Resolve master seeds, choosing random values where unset. The
-			// resolved seeds are reported so the world can be reproduced.
-			s1, s2 := *seed1, *seed2
-			if s1 == 0 {
-				var err error
-				if s1, err = randomSeed(); err != nil {
-					return err
-				}
-			}
-			if s2 == 0 {
-				var err error
-				if s2, err = randomSeed(); err != nil {
-					return err
-				}
-			}
-			fmt.Printf("seeds: seed1=%d seed2=%d\n", s1, s2)
-
-			return generateWorld(*rings, *data, tpty.Seeds{Seed1: s1, Seed2: s2})
-		},
+// loadGame reads game.json from the data directory and returns the game together
+// with its data-file paths resolved against the data directory.
+func loadGame(data string) (*tpty.Game, tpty.GameFiles, error) {
+	path := filepath.Join(data, "game.json")
+	buf, err := os.ReadFile(path)
+	if err != nil {
+		return nil, tpty.GameFiles{}, fmt.Errorf("read game: %w", err)
 	}
+	var game tpty.Game
+	if err := json.Unmarshal(buf, &game); err != nil {
+		return nil, tpty.GameFiles{}, fmt.Errorf("parse %s: %w", path, err)
+	}
+	return &game, game.Files.Resolve(data), nil
+}
+
+// writeJSON encodes v as indented JSON and writes it to path, creating parent
+// directories as needed.
+func writeJSON(path string, v any) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("create directory: %w", err)
+	}
+	buf, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encode: %w", err)
+	}
+	if err := os.WriteFile(path, buf, 0o644); err != nil {
+		return fmt.Errorf("write %s: %w", path, err)
+	}
+	return nil
 }
 
 // randomSeed returns a non-zero master seed drawn from a cryptographic source.
@@ -231,41 +370,4 @@ func randomSeed() (uint64, error) {
 			return s, nil
 		}
 	}
-}
-
-// generateWorld generates a world of the given number of rings from the master
-// seeds and writes it as JSON into the engine's data directory.
-func generateWorld(rings int, data string, seeds tpty.Seeds) error {
-	world, err := tpty.GenerateWorld(seeds, rings)
-	if err != nil {
-		return err
-	}
-
-	if err := os.MkdirAll(data, 0o755); err != nil {
-		return fmt.Errorf("create data directory: %w", err)
-	}
-
-	path := filepath.Join(data, "world.json")
-	buf, err := json.MarshalIndent(world, "", "  ")
-	if err != nil {
-		return fmt.Errorf("encode world: %w", err)
-	}
-	if err := os.WriteFile(path, buf, 0o644); err != nil {
-		return fmt.Errorf("write world: %w", err)
-	}
-
-	// Write the terrain-to-Worldographer tile translation alongside the world,
-	// so the world can be imported into Worldographer.
-	ttPath := filepath.Join(data, "terrain-translation.json")
-	ttBuf, err := json.MarshalIndent(tpty.TerrainTranslation(), "", "  ")
-	if err != nil {
-		return fmt.Errorf("encode terrain translation: %w", err)
-	}
-	if err := os.WriteFile(ttPath, ttBuf, 0o644); err != nil {
-		return fmt.Errorf("write terrain translation: %w", err)
-	}
-
-	fmt.Printf("wrote %d provinces to %s\n", len(world.Provinces), path)
-	fmt.Printf("wrote terrain translation to %s\n", ttPath)
-	return nil
 }
