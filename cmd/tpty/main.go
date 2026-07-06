@@ -124,7 +124,7 @@ func newGameCommand(parent *ff.FlagSet, data *string) *ff.Command {
 // See the reference documentation at content/docs/reference/games.md.
 func newGameCreateCommand(parent *ff.FlagSet, data *string) *ff.Command {
 	fs := ff.NewFlagSet("create").SetParent(parent)
-	id := fs.StringLong("id", "", "the game's `id` (a slug naming the game)")
+	id := fs.StringLong("game-id", "", "the game's `id` (a slug naming the game)")
 	seed1 := fs.Uint64Long("seed1", 0, "first master `seed` (0 = choose at random)")
 	seed2 := fs.Uint64Long("seed2", 0, "second master `seed` (0 = choose at random)")
 

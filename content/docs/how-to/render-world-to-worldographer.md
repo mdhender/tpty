@@ -17,7 +17,7 @@ files that `render` reads:
 If you have not generated one yet, create a game and generate its world:
 
 ```sh
-tpty game create --id my-game --data path/to/data --seed1 7 --seed2 13
+tpty game create --game-id my-game --data path/to/data --seed1 7 --seed2 13
 tpty world generate --rings 3 --data path/to/data
 ```
 

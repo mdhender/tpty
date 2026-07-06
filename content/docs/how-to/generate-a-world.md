@@ -10,7 +10,7 @@ Generating a world fills in the map for a game you have already created.
 You need a game. If you have not created one yet:
 
 ```sh
-tpty game create --id my-game --data path/to/data
+tpty game create --game-id my-game --data path/to/data
 ```
 
 See [Create a game]({{< relref "/docs/how-to/create-a-game.md" >}}).

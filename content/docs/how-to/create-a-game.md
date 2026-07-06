@@ -8,7 +8,7 @@ Creating a game is the first step — it writes the `game.json` manifest that ev
 other command reads.
 
 ```sh
-tpty game create --id my-game --data path/to/data
+tpty game create --game-id my-game --data path/to/data
 ```
 
 This writes `game.json` into the data directory. It records the game's id and a
@@ -17,8 +17,9 @@ pair of master seeds, and names the game's other data files (`world.json`,
 
 ## Options
 
-- `--id` (required) — a slug naming the game. Any printable ASCII character is
-  allowed except a space, a double quote, or a backslash.
+- `--game-id` (required) — a slug naming the game. Any printable ASCII character
+  is allowed except a space, a double quote, or a backslash. May also be supplied
+  as the `TPTY_GAME_ID` environment variable.
 - `--data` (required) — the game's data directory. May also be supplied as the
   `TPTY_DATA` environment variable.
 - `--seed1`, `--seed2` — the two master seeds. If omitted (or 0) they are chosen
