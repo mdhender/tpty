@@ -1,6 +1,6 @@
 ---
 title: World Generation
-weight: 1
+weight: 2
 ---
 
 The world is a hexagonal grid. Each hex is a **province** and is assigned
@@ -20,6 +20,11 @@ game's master seeds.
 
 Coordinates are reported using **axial** coordinates `(q, r)`. The origin is
 `(0, 0)`.
+
+Wherever coordinates are written as data — in files, as program input and
+output, and in messages exchanged about a game — a province's coordinates use a
+**compact** form with no spaces, for example `(-1,0)` and `(0,0)`. The spaced
+form `(q, r)` used elsewhere in this documentation is for readability only.
 
 The six neighbor directions, in clockwise order from north:
 
@@ -61,8 +66,11 @@ origin is `(0, -k)`.
 
 ## Determinism
 
-The world is deterministic: the same master seeds always produce the same
-world. A game records two master seeds, `seed1` and `seed2`, both `uint64`.
+The world is deterministic: the same seeds always produce the same world. The
+game records two master seeds (see
+[Games]({{< relref "/docs/reference/games.md" >}})); when the world is generated
+it derives its own master seeds from the game's, and every terrain draw comes
+from the world's seeds. Both are `uint64` pairs (`seed1`, `seed2`).
 
 ## Generation
 

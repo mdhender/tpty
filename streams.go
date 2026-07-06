@@ -32,7 +32,10 @@ type Key int64
 // every existing game. See CLAUDE.md and
 // content/docs/explanation/counter-based-prng.md.
 const (
-	KeyTerrain Key = iota + 1 // world terrain generation
+	KeyTerrain      Key = iota + 1 // world terrain generation
+	KeyPlayerSeeds                 // a player's private seeds, keyed by a hash of the handle
+	KeyPlayerSecret                // a player's password, keyed by the starting province (q, r)
+	KeyWorldSeeds                  // the world's private seeds, derived from the game's
 )
 
 // Stream returns a deterministic PRNG for the given key path.
@@ -64,4 +67,14 @@ func (s Seeds) Stream(path ...Key) *rand.Rand {
 		binary.BigEndian.Uint64(sum[0:8]),
 		binary.BigEndian.Uint64(sum[8:16]),
 	))
+}
+
+// Derive returns child seeds derived from s along the given key path. It gives a
+// subsystem (a world, a player) its own master seeds from a parent's,
+// deterministically, so the subsystem can carry its own randomness.
+//
+// The derivation is a frozen compatibility surface: see CLAUDE.md.
+func (s Seeds) Derive(path ...Key) Seeds {
+	r := s.Stream(path...)
+	return Seeds{Seed1: r.Uint64(), Seed2: r.Uint64()}
 }

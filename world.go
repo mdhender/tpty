@@ -82,17 +82,21 @@ type World struct {
 	Provinces []Province `json:"provinces"`
 }
 
-// GenerateWorld generates a world of the given number of rings from the master
-// seeds. The number of rings must satisfy 0 < rings < 100.
+// GenerateWorld generates a world of the given number of rings from the game's
+// master seeds. The number of rings must satisfy 0 < rings < 100.
+//
+// The world derives its own master seeds from the game's and records them, so
+// terrain draws come from the world's seeds rather than the game's directly.
 //
 // See content/docs/reference/world-generation.md for the rules.
-func GenerateWorld(seeds Seeds, rings int) (*World, error) {
+func GenerateWorld(gameSeeds Seeds, rings int) (*World, error) {
 	if rings <= 0 || rings >= 100 {
 		return nil, fmt.Errorf("rings must be > 0 and < 100, got %d", rings)
 	}
 
+	worldSeeds := gameSeeds.Derive(KeyWorldSeeds)
 	w := &World{
-		Seeds:     seeds,
+		Seeds:     worldSeeds,
 		Rings:     rings,
 		Provinces: make([]Province, 0, 1+3*rings*(rings+1)),
 	}
@@ -104,7 +108,7 @@ func GenerateWorld(seeds Seeds, rings int) (*World, error) {
 	// its own coordinates, so the result is independent of iteration order.
 	for k := 1; k <= rings; k++ {
 		for _, h := range Ring(k) {
-			stream := seeds.Stream(KeyTerrain, Key(h.Q), Key(h.R))
+			stream := worldSeeds.Stream(KeyTerrain, Key(h.Q), Key(h.R))
 			w.Provinces = append(w.Provinces, Province{Q: h.Q, R: h.R, Terrain: rollTerrain(stream)})
 		}
 	}

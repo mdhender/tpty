@@ -2,11 +2,21 @@
 
 package tpty
 
+import "fmt"
+
 // Hex is a position on the world grid in axial coordinates.
 //
 // See content/docs/reference/world-generation.md for the coordinate system.
 type Hex struct {
 	Q, R int
+}
+
+// String returns the hex's coordinates in the canonical compact form "(q,r)",
+// with no spaces (for example, "(-1,0)"). This is the form used in data files,
+// program input and output, and messages about a game; the spaced form "(q, r)"
+// is only for prose. See content/docs/reference/world-generation.md.
+func (h Hex) String() string {
+	return fmt.Sprintf("(%d,%d)", h.Q, h.R)
 }
 
 // The six neighbor directions, as axial vectors. Listed clockwise from north.
