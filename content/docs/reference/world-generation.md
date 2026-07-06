@@ -97,4 +97,4 @@ World generation is provided by the `cmd/tpty` command.
 
 ## See also
 
-- [Glossary](glossary)
+- [Glossary]({{< ref "/docs/reference/glossary.md" >}})
