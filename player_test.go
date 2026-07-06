@@ -232,6 +232,117 @@ func TestPlayerPasswordDependsOnProvince(t *testing.T) {
 	}
 }
 
+// TestResetPasswordDiffersFromCreationAndIsStored confirms a reset produces a
+// value different from the creation password and writes it onto the stored
+// player (the value authentication validates against).
+func TestResetPasswordDiffersFromCreationAndIsStored(t *testing.T) {
+	s := NewPlayerStore()
+	created, err := s.Create(testSeeds, "a@x.com", "alice", "(0,0)")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	reset, err := s.ResetPassword("a@x.com", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reset.Password == created.Password {
+		t.Error("reset password equals the creation password")
+	}
+	if reset.Password == "" {
+		t.Fatal("reset password is empty")
+	}
+	// The new value is persisted on the stored player.
+	stored, ok := s.ByEmail("a@x.com")
+	if !ok {
+		t.Fatal("player vanished after reset")
+	}
+	if stored.Password != reset.Password {
+		t.Errorf("stored password = %q, want the reset value %q", stored.Password, reset.Password)
+	}
+	// Only the password changed.
+	if stored.ID != created.ID || stored.Handle != created.Handle ||
+		stored.Email != created.Email || stored.StartingProvince != created.StartingProvince ||
+		stored.Seeds != created.Seeds {
+		t.Errorf("reset changed more than the password:\n created=%+v\n stored=%+v", created, stored)
+	}
+}
+
+// TestResetPasswordVariesByTurn confirms two resets in the same turn reproduce
+// the same value, while resets in different turns differ.
+func TestResetPasswordVariesByTurn(t *testing.T) {
+	s := NewPlayerStore()
+	if _, err := s.Create(testSeeds, "a@x.com", "alice", "(0,0)"); err != nil {
+		t.Fatal(err)
+	}
+
+	turn0a, err := s.ResetPassword("a@x.com", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	turn0b, err := s.ResetPassword("a@x.com", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	turn1, err := s.ResetPassword("a@x.com", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if turn0a.Password != turn0b.Password {
+		t.Errorf("same-turn reset was not reproducible: %q vs %q", turn0a.Password, turn0b.Password)
+	}
+	if turn0a.Password == turn1.Password {
+		t.Error("reset did not vary across turns")
+	}
+}
+
+// TestResetPasswordEmailLookupIsCaseInsensitive confirms the email key is matched
+// after lowercasing, like every other email comparison.
+func TestResetPasswordEmailLookupIsCaseInsensitive(t *testing.T) {
+	s := NewPlayerStore()
+	if _, err := s.Create(testSeeds, "Alice@Example.com", "alice", "(0,0)"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ResetPassword("ALICE@EXAMPLE.COM", 0); err != nil {
+		t.Errorf("case-insensitive email lookup failed: %v", err)
+	}
+}
+
+// TestResetPasswordUnknownEmail confirms an email that matches no player is a
+// distinct, testable error.
+func TestResetPasswordUnknownEmail(t *testing.T) {
+	s := newTestStore(t) // has alice@example.com
+	if _, err := s.ResetPassword("nobody@example.com", 0); !errors.Is(err, ErrUnknownEmail) {
+		t.Errorf("ResetPassword with unknown email: err = %v, want ErrUnknownEmail", err)
+	}
+}
+
+// TestResetPasswordRejectsMissingEmail confirms a blank email is rejected before
+// any lookup.
+func TestResetPasswordRejectsMissingEmail(t *testing.T) {
+	s := newTestStore(t)
+	if _, err := s.ResetPassword("   ", 0); !errors.Is(err, ErrInvalidEmail) {
+		t.Errorf("ResetPassword with blank email: err = %v, want ErrInvalidEmail", err)
+	}
+}
+
+// TestResetPasswordIsJSONSafe confirms a reset password, like a creation
+// password, carries no space or JSON-escaping character.
+func TestResetPasswordIsJSONSafe(t *testing.T) {
+	s := NewPlayerStore()
+	if _, err := s.Create(testSeeds, "a@x.com", "alice", "(0,0)"); err != nil {
+		t.Fatal(err)
+	}
+	reset, err := s.ResetPassword("a@x.com", 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.ContainsAny(reset.Password, " \t\n\r\"\\") {
+		t.Errorf("reset password %q contains a space or JSON-escaping character", reset.Password)
+	}
+}
+
 func TestParseProvince(t *testing.T) {
 	for _, s := range []string{"(0,0)", "(-1,0)", "(2,-3)"} {
 		got, err := ParseProvince(s)

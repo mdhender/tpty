@@ -14,4 +14,5 @@ task. Come here when you already know the basics and need to get something done.
   {{< card link="render-world-to-worldographer" title="Render a world to Worldographer" subtitle="Turn a generated world into a Worldographer map" >}}
   {{< card link="recruit-players" title="Recruit players and add them to a game" subtitle="Offer starting provinces and add each player" >}}
   {{< card link="list-and-inspect-players" title="List and inspect players" subtitle="Review the players in a game and resend passwords" >}}
+  {{< card link="reset-a-password" title="Reset an exposed password" subtitle="Reissue a player's order password when it has leaked" >}}
 {{< /cards >}}

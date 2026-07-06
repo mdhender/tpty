@@ -1,6 +1,6 @@
 ---
 title: Players
-weight: 3
+weight: 4
 ---
 
 A **player** is a person participating in a game. Players are scoped to a game:
@@ -71,6 +71,32 @@ the player id, and the password as quoted text.
 - Stored in plain text.
 - Contains no characters that require escaping in JSON and none that could be
   confused with an ASCII space.
+
+### Resetting a password
+
+A player's password can be **reset** — reissued — when the current one has been
+exposed. The reset replaces the stored password with a new value:
+
+- The new value is drawn from the player's own private randomness stream, keyed
+  by the game's [current turn]({{< relref "/docs/reference/turns.md" >}}). It is
+  therefore deterministic for the engine but not predictable by others.
+- It is drawn from a different part of the player's stream than the creation
+  password, so a reset always differs from the password the player was created
+  with, at any turn.
+- Two resets in the **same** turn reproduce the same value; resets in
+  **different** turns differ. Successive resets are distinguished by the turn
+  advancing.
+- The new value is written to the player record, replacing the old password.
+  Authentication always validates an order against the password **stored in the
+  player record**, so a reset takes effect as soon as it is saved.
+- Only the stored password changes. The player's id, email, handle, starting
+  province, and private seeds are untouched.
+
+A reset is looked up by the player's **email** — the address on record — and by
+nothing else. Keying on the distinctive registered email (rather than a
+sequential id or a handle) makes it harder to reset the wrong player's password
+by mistake, and harder for one player to trick the GM into resetting another
+player's password.
 
 ## Randomness
 

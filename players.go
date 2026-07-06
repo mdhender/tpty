@@ -68,6 +68,33 @@ func (s *PlayerStore) Create(master Seeds, email, handle, startingProvince strin
 	return p, nil
 }
 
+// ResetPassword reissues the password of the player registered with the given
+// email, drawing a new value from that player's own private stream keyed by the
+// current turn, storing it on the player, and returning the updated player.
+//
+// Lookup is by email only (compared after lowercasing): the distinctive
+// registered address is deliberately the sole key, to reduce GM mistakes and
+// raise the bar for tricking the GM into resetting the wrong player. An empty
+// email is rejected with ErrInvalidEmail; an email that matches no player is
+// rejected with ErrUnknownEmail.
+//
+// Only the stored password changes; the player's id, email, handle, starting
+// province, and seeds are untouched. The reset value always differs from the
+// creation password (a different stream domain) and differs across turns.
+func (s *PlayerStore) ResetPassword(email string, turn int) (Player, error) {
+	email = normalizeEmail(email)
+	if email == "" {
+		return Player{}, fmt.Errorf("email is required: %w", ErrInvalidEmail)
+	}
+	for i := range s.Players {
+		if s.Players[i].Email == email {
+			s.Players[i].Password = generateResetPassword(s.Players[i].Seeds, turn)
+			return s.Players[i], nil
+		}
+	}
+	return Player{}, fmt.Errorf("%q: %w", email, ErrUnknownEmail)
+}
+
 // ByID returns the player with the given id, if any.
 func (s *PlayerStore) ByID(id int) (Player, bool) {
 	for _, p := range s.Players {

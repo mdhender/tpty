@@ -59,6 +59,7 @@ func main() {
 //	├── player
 //	│   ├── create
 //	│   ├── list
+//	│   ├── reset-password
 //	│   └── show
 //	└── world
 //	    ├── generate
@@ -205,6 +206,7 @@ func newPlayerCommand(parent *ff.FlagSet, data *string) *ff.Command {
 	player.Subcommands = []*ff.Command{
 		newPlayerCreateCommand(playerFlags, data),
 		newPlayerListCommand(playerFlags, data),
+		newPlayerResetPasswordCommand(playerFlags, data),
 		newPlayerShowCommand(playerFlags, data),
 	}
 	return player
@@ -336,6 +338,65 @@ func listPlayers(data string) error {
 		fmt.Fprintf(w, "%d\t%s\t%s\t%s\n", p.ID, p.Handle, p.Email, p.StartingProvince)
 	}
 	return w.Flush()
+}
+
+// newPlayerResetPasswordCommand builds the "player reset-password" command, which
+// reissues a player's password. The player is looked up by email only.
+//
+// See the reference documentation at content/docs/reference/players.md.
+func newPlayerResetPasswordCommand(parent *ff.FlagSet, data *string) *ff.Command {
+	fs := ff.NewFlagSet("reset-password").SetParent(parent)
+	email := fs.StringLong("email", "", "the player's `email` address")
+
+	return &ff.Command{
+		Name:      "reset-password",
+		Usage:     "tpty player reset-password [FLAGS]",
+		ShortHelp: "reset a player's password",
+		Flags:     fs,
+		Exec: func(ctx context.Context, args []string) error {
+			if len(args) > 0 {
+				return fmt.Errorf("unexpected argument %q: this command takes flags only, no positional arguments", args[0])
+			}
+			if *data == "" {
+				return fmt.Errorf("--data is required")
+			}
+			if *email == "" {
+				return fmt.Errorf("--email is required")
+			}
+			return resetPlayerPassword(*data, *email)
+		},
+	}
+}
+
+// resetPlayerPassword reissues the password of the player registered with email,
+// drawing a new value from the player's stream keyed by the game's current turn,
+// writes the updated players file, and prints the new password for the GM to
+// resend.
+func resetPlayerPassword(data, email string) error {
+	game, files, err := loadGame(data)
+	if err != nil {
+		return err
+	}
+	store, err := loadPlayers(files.Players)
+	if err != nil {
+		return err
+	}
+
+	player, err := store.ResetPassword(email, game.Turn)
+	if err != nil {
+		return err
+	}
+
+	if err := writeJSON(files.Players, store); err != nil {
+		return fmt.Errorf("write players: %w", err)
+	}
+
+	fmt.Printf("reset password for player %d in game %q (turn %d)\n", player.ID, game.ID, game.Turn)
+	fmt.Printf("  handle:   %s\n", player.Handle)
+	fmt.Printf("  email:    %s\n", player.Email)
+	fmt.Printf("  password: %s\n", player.Password)
+	fmt.Printf("wrote %s\n", files.Players)
+	return nil
 }
 
 // newPlayerShowCommand builds the "player show" command, which shows one player's

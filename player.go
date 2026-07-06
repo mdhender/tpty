@@ -37,6 +37,7 @@ const (
 	ErrInvalidProvince = cerrs.Error("invalid starting province")
 	ErrDuplicateEmail  = cerrs.Error("duplicate email")
 	ErrDuplicateHandle = cerrs.Error("duplicate handle")
+	ErrUnknownEmail    = cerrs.Error("unknown email")
 )
 
 // passwordWordCount is the number of words in a generated password. The phrases
@@ -122,5 +123,16 @@ func hashHandle(handle string) int64 {
 // needs no JSON escaping and contains no spaces.
 func generatePassword(seeds Seeds, province Hex) string {
 	s := seeds.Stream(KeyPlayerSecret, Key(province.Q), Key(province.R))
+	return phrases.Generate(s, passwordWordCount)
+}
+
+// generateResetPassword generates a player's reset password from the player's
+// own seeds, keyed by the current turn. It draws from the KeyPlayerPasswordReset
+// domain — distinct from the KeyPlayerSecret domain used by generatePassword —
+// so a reset value always differs from the creation password, and the turn
+// differentiates successive resets. Like a creation password, the result is
+// words joined by periods, so it needs no JSON escaping and contains no spaces.
+func generateResetPassword(seeds Seeds, turn int) string {
+	s := seeds.Stream(KeyPlayerPasswordReset, Key(turn))
 	return phrases.Generate(s, passwordWordCount)
 }

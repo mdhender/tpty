@@ -54,3 +54,7 @@ Definitions of terms used across the reference.
 
 **Tile**
 : The permanent aspect of a province (for example, "an ocean tile").
+
+**Turn**
+: The unit of play a game advances by. Turn `0` is setup (no turn); play begins
+  at turn `1` and counts up. See [Turns]({{< relref "/docs/reference/turns.md" >}}).

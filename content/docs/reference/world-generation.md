@@ -1,6 +1,6 @@
 ---
 title: World Generation
-weight: 2
+weight: 3
 ---
 
 The world is a hexagonal grid. Each hex is a **province** and is assigned

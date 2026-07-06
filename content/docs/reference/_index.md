@@ -13,6 +13,7 @@ reviewed and moved here.
 
 {{< cards >}}
   {{< card link="games" title="Games" subtitle="The top-level game, its master seeds, and the game.json manifest" >}}
+  {{< card link="turns" title="Turns" subtitle="How a game advances: turn numbering and the per-turn lifecycle" >}}
   {{< card link="world-generation" title="World Generation" subtitle="How the hex world is generated from the master seeds" >}}
   {{< card link="players" title="Players" subtitle="Players in a game: identity, starting province, and order password" >}}
   {{< card link="glossary" title="Glossary" subtitle="Terms used across the reference" >}}

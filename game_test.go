@@ -62,6 +62,44 @@ func TestGameJSONRoundTrip(t *testing.T) {
 	}
 }
 
+// TestNewGameStartsAtTurnZero confirms a new game begins at turn 0 (setup — no
+// turn), the zero value.
+func TestNewGameStartsAtTurnZero(t *testing.T) {
+	g, err := NewGame("ok", Seeds{Seed1: 1, Seed2: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if g.Turn != 0 {
+		t.Errorf("new game Turn = %d, want 0", g.Turn)
+	}
+}
+
+// TestGameTurnRoundTrips confirms a non-zero turn survives a JSON round-trip and
+// is written under the "turn" key.
+func TestGameTurnRoundTrips(t *testing.T) {
+	g, err := NewGame("smoke-test-1", Seeds{Seed1: 1, Seed2: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	g.Turn = 5
+	buf, err := json.Marshal(g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got Game
+	if err := json.Unmarshal(buf, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Turn != 5 {
+		t.Errorf("round-trip Turn = %d, want 5", got.Turn)
+	}
+	var raw map[string]any
+	_ = json.Unmarshal(buf, &raw)
+	if _, ok := raw["turn"]; !ok {
+		t.Errorf("expected a \"turn\" key in %s", buf)
+	}
+}
+
 func TestGameFilesResolve(t *testing.T) {
 	base := filepath.FromSlash("/games/g1")
 	abs := filepath.FromSlash("/shared/world.json")

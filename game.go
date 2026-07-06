@@ -10,13 +10,17 @@ import (
 )
 
 // Game is the top-level unit of play. The world and the players belong to it. A
-// game is stored as a game.json manifest: its id and master seeds, plus the
-// locations of its data files.
+// game is stored as a game.json manifest: its id, master seeds, and current
+// turn, plus the locations of its data files.
+//
+// Turn is the turn the game is on now. A new game starts at turn 0 (setup — no
+// turn); play begins at turn 1. See content/docs/reference/turns.md.
 //
 // See content/docs/reference/games.md for the rules.
 type Game struct {
 	ID    string    `json:"id"`
 	Seeds Seeds     `json:"seeds"`
+	Turn  int       `json:"turn"`
 	Files GameFiles `json:"files"`
 }
 

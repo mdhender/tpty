@@ -9,7 +9,8 @@ players — belongs to a game. A game is described by a manifest file,
 
 ## Identity
 
-Every game has an id and a pair of master seeds.
+Every game has an id and a pair of master seeds. It also tracks its current
+turn.
 
 ### ID
 
@@ -26,15 +27,22 @@ Every game has an id and a pair of master seeds.
 - They are the root of every random outcome in the game (see
   [Seeds and subsystems](#seeds-and-subsystems)).
 
+### Current turn
+
+- The turn the game is on now, stored in the manifest as `turn`.
+- A new game starts at turn `0` (setup — no turn); play begins at turn `1`. See
+  [Turns]({{< relref "/docs/reference/turns.md" >}}).
+
 ## Manifest
 
-A game is stored as a `game.json` manifest. It records the game's id and master
-seeds, and maps each of the game's data files to a location:
+A game is stored as a `game.json` manifest. It records the game's id, master
+seeds, and current turn, and maps each of the game's data files to a location:
 
 ```json
 {
   "id": "smoke-test-1",
   "seeds": { "seed1": 12345, "seed2": 67890 },
+  "turn": 0,
   "files": {
     "world": "./world.json",
     "players": "./players.json",

@@ -32,10 +32,11 @@ type Key int64
 // every existing game. See CLAUDE.md and
 // content/docs/explanation/counter-based-prng.md.
 const (
-	KeyTerrain      Key = iota + 1 // world terrain generation
-	KeyPlayerSeeds                 // a player's private seeds, keyed by a hash of the handle
-	KeyPlayerSecret                // a player's password, keyed by the starting province (q, r)
-	KeyWorldSeeds                  // the world's private seeds, derived from the game's
+	KeyTerrain            Key = iota + 1 // world terrain generation
+	KeyPlayerSeeds                       // a player's private seeds, keyed by a hash of the handle
+	KeyPlayerSecret                      // a player's password, keyed by the starting province (q, r)
+	KeyWorldSeeds                        // the world's private seeds, derived from the game's
+	KeyPlayerPasswordReset               // a player's reset password, keyed by the current turn
 )
 
 // Stream returns a deterministic PRNG for the given key path.

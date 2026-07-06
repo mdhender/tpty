@@ -59,4 +59,5 @@ This is how you look up a player's id and password to resend them.
 ## See also
 
 - [Recruit players and add them to a game]({{< relref "/docs/how-to/recruit-players.md" >}})
+- [Reset an exposed password]({{< relref "/docs/how-to/reset-a-password.md" >}})
 - [Players reference]({{< relref "/docs/reference/players.md" >}})
