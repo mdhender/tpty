@@ -7,9 +7,11 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/mdhender/tpty"
 	"github.com/peterbourgon/ff/v4"
@@ -128,7 +130,7 @@ func newWorldGenerateCommand(parent *ff.FlagSet, data *string) *ff.Command {
 			}
 			fmt.Printf("seeds: seed1=%d seed2=%d\n", s1, s2)
 
-			return generateWorld(*rings, *data, s1, s2)
+			return generateWorld(*rings, *data, tpty.Seeds{Seed1: s1, Seed2: s2})
 		},
 	}
 }
@@ -146,10 +148,27 @@ func randomSeed() (uint64, error) {
 	}
 }
 
-// generateWorld generates a world of the given number of rings and writes it
-// into the engine's data directory, using the two master seeds.
-//
-// TODO: implement world generation per content/docs/reference/world-generation.md.
-func generateWorld(rings int, data string, seed1, seed2 uint64) error {
-	return fmt.Errorf("world generation is not yet implemented (rings=%d, data=%q)", rings, data)
+// generateWorld generates a world of the given number of rings from the master
+// seeds and writes it as JSON into the engine's data directory.
+func generateWorld(rings int, data string, seeds tpty.Seeds) error {
+	world, err := tpty.GenerateWorld(seeds, rings)
+	if err != nil {
+		return err
+	}
+
+	if err := os.MkdirAll(data, 0o755); err != nil {
+		return fmt.Errorf("create data directory: %w", err)
+	}
+
+	path := filepath.Join(data, "world.json")
+	buf, err := json.MarshalIndent(world, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encode world: %w", err)
+	}
+	if err := os.WriteFile(path, buf, 0o644); err != nil {
+		return fmt.Errorf("write world: %w", err)
+	}
+
+	fmt.Printf("wrote %d provinces to %s\n", len(world.Provinces), path)
+	return nil
 }

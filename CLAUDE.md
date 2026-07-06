@@ -60,11 +60,13 @@ The engine must be deterministic: the same master seeds always reproduce the
 same game. This is an implementation constraint on engine code (the reference
 only documents the observable guarantee).
 
-- A game records two `uint64` master seeds, `seed1` and `seed2`, used to seed a
-  PCG source (`math/rand/v2`).
+- A game records two `uint64` master seeds, `seed1` and `seed2` (`tpty.Seeds`),
+  used to seed PCG sources (`math/rand/v2`).
 - Derive PRNG streams from the master seeds rather than reusing one source.
-  A stream is obtained by hashing the master seeds with a key path and a leaf
-  identifier, then seeding a PCG source with the result. (TODO: confirm the
-  "key"/"leaf" naming and the exact derivation once the seeding code exists.)
-- Never range over a Go map where the iteration order would change the order of
-  random draws. Sort keys or use an ordered structure instead.
+  `Seeds.Stream(key string, leaf ...int64)` (see `streams.go`) hashes the master
+  seeds with a **key** (a string naming the stream's purpose, e.g.
+  `"world.terrain"`) and a **leaf** (values identifying the specific item, e.g. a
+  province's `q, r`) via SHA-256, and uses the digest to seed a PCG source.
+- Prefer keying a stream by the item's own identity (coordinates, id) so draws
+  do not depend on iteration order at all. Never range over a Go map where the
+  iteration order would change the order of random draws.
