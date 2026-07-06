@@ -99,6 +99,63 @@ A world of `n` rings contains `1 + 3n(n + 1)` provinces (the origin plus `6k`
 provinces for each ring `k` from `1` to `n`). For example, `n = 1` yields 7
 provinces, and `n = 2` yields 19.
 
+## Starting provinces
+
+A game has a set of **allowed starting provinces**: the provinces on which
+players may be placed. A player's starting province must be one of them (see
+[Players]({{< relref "/docs/reference/players.md" >}})). This is a hard
+invariant that player creation depends on.
+
+The set is a function of world geometry, so it is meaningful only once the world
+exists. The default set is six provinces, chosen purely by geometry — terrain is
+never consulted, and any province may be a starting province:
+
+- Pick a **ring distance** `d` from the origin. The default is
+  `d = ceil(numberOfRings / 2)` — halfway out, toward the outermost ring:
+
+  | `numberOfRings` | default `d` |
+  |-----------------|-------------|
+  | 1               | 1           |
+  | 2               | 1           |
+  | 3               | 2           |
+  | 4               | 2           |
+  | 5               | 3           |
+  | 6               | 3           |
+
+  `d` may be chosen freely, but must satisfy `0 < d <= numberOfRings`.
+
+- Place one province in each of the six flat-top directions, each at distance
+  `d`: the direction vector scaled by `d`. The six are always listed in the
+  deterministic order **N, NE, SE, S, SW, NW**.
+
+Because `0 < d <= numberOfRings`, all six provinces are always distinct and lie
+within the generated world. There is always exactly **six**.
+
+Worked example, a world with `numberOfRings = 3` and the default `d = 2`:
+
+| Direction | Province  |
+|-----------|-----------|
+| N         | `(0,-2)`  |
+| NE        | `(2,-2)`  |
+| SE        | `(2,0)`   |
+| S         | `(0,2)`   |
+| SW        | `(-2,2)`  |
+| NW        | `(-2,0)`  |
+
+For `d = 1` the six are the origin's immediate neighbors:
+`(0,-1)`, `(1,-1)`, `(1,0)`, `(0,1)`, `(-1,1)`, `(-1,0)`.
+
+{{< callout type="warning" >}}
+On a large world the six defaults sit far from the center (distance
+`ceil(numberOfRings / 2)`), which a new GM may not expect. Choose a nearer ring
+with `--ring`, or edit `starting-provinces.json` afterward. Large worlds are
+allowed; this is only a caution.
+{{< /callout >}}
+
+The default set is a starting point that the GM may edit afterward. The current
+selection is purely geometric; it is expected to improve later (for example, a
+short walk from the computed hex toward better nearby terrain).
+
 ## Command
 
 World generation is provided by the `cmd/tpty` command. It writes two files into

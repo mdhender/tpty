@@ -63,7 +63,9 @@ func main() {
 //	│   └── show
 //	└── world
 //	    ├── generate
-//	    └── render
+//	    ├── render
+//	    └── starting-provinces
+//	        └── generate
 //
 // Commands are noun-verb (resource then action). All commands take flags only;
 // positional arguments are rejected.
@@ -485,8 +487,147 @@ func newWorldCommand(parent *ff.FlagSet, data *string) *ff.Command {
 	world.Subcommands = []*ff.Command{
 		newWorldGenerateCommand(worldFlags, data),
 		newWorldRenderCommand(worldFlags, data),
+		newWorldStartingProvincesCommand(worldFlags, data),
 	}
 	return world
+}
+
+// newWorldStartingProvincesCommand builds the "world starting-provinces" group,
+// which manages the game's allowed starting provinces. It currently offers the
+// "generate" verb; management verbs (list, add, remove) are future siblings.
+func newWorldStartingProvincesCommand(parent *ff.FlagSet, data *string) *ff.Command {
+	spFlags := ff.NewFlagSet("starting-provinces").SetParent(parent)
+
+	sp := &ff.Command{
+		Name:      "starting-provinces",
+		Usage:     "tpty world starting-provinces [FLAGS] SUBCOMMAND ...",
+		ShortHelp: "manage the game's allowed starting provinces",
+		Flags:     spFlags,
+		Exec: func(ctx context.Context, args []string) error {
+			// No subcommand selected; show help.
+			return ff.ErrHelp
+		},
+	}
+
+	sp.Subcommands = []*ff.Command{
+		newWorldStartingProvincesGenerateCommand(spFlags, data),
+	}
+	return sp
+}
+
+// newWorldStartingProvincesGenerateCommand builds the
+// "world starting-provinces generate" command, which writes the default set of
+// six starting provinces to the manifest's starting-provinces path.
+//
+// See the reference documentation at
+// content/docs/reference/world-generation.md for the selection rule.
+func newWorldStartingProvincesGenerateCommand(parent *ff.FlagSet, data *string) *ff.Command {
+	fs := ff.NewFlagSet("generate").SetParent(parent)
+	// ring defaults to 0, the sentinel for "unset": the ring is then computed
+	// from the world's ring count as ceil(rings/2).
+	ring := fs.IntLong("ring", 0, "ring distance from the origin (default ceil(worldRings/2); 0 < ring <= worldRings)")
+	overwrite := fs.BoolLong("overwrite", "replace an existing starting-provinces file")
+
+	return &ff.Command{
+		Name:      "generate",
+		Usage:     "tpty world starting-provinces generate [FLAGS]",
+		ShortHelp: "write the default six starting provinces",
+		Flags:     fs,
+		Exec: func(ctx context.Context, args []string) error {
+			if len(args) > 0 {
+				return fmt.Errorf("unexpected argument %q: this command takes flags only, no positional arguments", args[0])
+			}
+			if *data == "" {
+				return fmt.Errorf("--data is required")
+			}
+			return generateStartingProvinces(*data, *ring, *overwrite)
+		},
+	}
+}
+
+// generateStartingProvinces writes the default set of six starting provinces to
+// the manifest's starting-provinces path. It hard-fails when world.json is
+// absent (the ring count comes from it), refuses to clobber an existing file
+// unless overwrite is set, and warns (but proceeds) when players.json exists.
+//
+// A ring of 0 means "unset": the distance defaults to ceil(worldRings/2). An
+// explicit ring must satisfy 0 < ring <= worldRings.
+func generateStartingProvinces(data string, ring int, overwrite bool) error {
+	game, files, err := loadGame(data)
+	if err != nil {
+		return err
+	}
+
+	// The world must exist: it supplies the ring count and the provinces name
+	// real hexes. Fail clearly rather than with a raw "no such file".
+	worldRings, err := loadWorldRings(files.World)
+	if err != nil {
+		return err
+	}
+
+	if ring == 0 {
+		ring = tpty.DefaultStartingProvinceRing(worldRings)
+	}
+	if ring <= 0 || ring > worldRings {
+		return fmt.Errorf("--ring must be > 0 and <= %d (the world's ring count), got %d", worldRings, ring)
+	}
+
+	provinces, err := tpty.StartingProvinces(ring)
+	if err != nil {
+		return err
+	}
+
+	// Default is to refuse to clobber: a pre-existing file most likely means the
+	// GM is recreating or cloning a game, so overwriting must be explicit.
+	if !overwrite {
+		if _, err := os.Stat(files.StartingProvinces); err == nil {
+			return fmt.Errorf("%s already exists; pass --overwrite to replace it", files.StartingProvinces)
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("stat %s: %w", files.StartingProvinces, err)
+		}
+	}
+
+	// A footgun-with-a-warning: existing players are not re-validated against the
+	// new set (that is a management concern). Flag it, but proceed.
+	if _, err := os.Stat(files.Players); err == nil {
+		fmt.Fprintf(os.Stderr, "warning: %s exists; existing players are not re-validated against the new starting provinces\n", files.Players)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("stat %s: %w", files.Players, err)
+	}
+
+	if err := writeJSON(files.StartingProvinces, provinces); err != nil {
+		return fmt.Errorf("write starting provinces: %w", err)
+	}
+
+	fmt.Printf("generated %d starting provinces for game %q (ring %d)\n", len(provinces), game.ID, ring)
+	for _, p := range provinces {
+		fmt.Printf("  %s\n", p)
+	}
+	fmt.Printf("wrote %s\n", files.StartingProvinces)
+	return nil
+}
+
+// loadWorldRings reads the world file named in the manifest and returns its ring
+// count. A missing file is a hard failure: starting provinces are meaningful
+// only once the world exists.
+func loadWorldRings(path string) (int, error) {
+	buf, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return 0, fmt.Errorf("%s does not exist; generate the world first (tpty world generate)", path)
+	}
+	if err != nil {
+		return 0, fmt.Errorf("read world: %w", err)
+	}
+	var world struct {
+		Rings int `json:"rings"`
+	}
+	if err := json.Unmarshal(buf, &world); err != nil {
+		return 0, fmt.Errorf("parse %s: %w", path, err)
+	}
+	if world.Rings <= 0 {
+		return 0, fmt.Errorf("%s has an invalid ring count %d", path, world.Rings)
+	}
+	return world.Rings, nil
 }
 
 // newWorldGenerateCommand builds the "world generate" command. It reads the

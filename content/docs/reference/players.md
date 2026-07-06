@@ -56,7 +56,9 @@ created when the game begins. It is retained afterward so the player can be
 restarted from the same place.
 
 - A player's starting province must be one of the game's **allowed starting
-  provinces** — a set the GM maintains for the game.
+  provinces** — a set the GM maintains for the game. See
+  [Starting provinces]({{< relref "/docs/reference/world-generation.md#starting-provinces" >}})
+  for how the default set is chosen and its invariants.
 - Provinces are named by their coordinates in compact form (see
   [World Generation]({{< relref "/docs/reference/world-generation.md" >}})), for
   example `(-1,0)`.
