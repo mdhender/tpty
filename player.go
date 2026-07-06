@@ -67,6 +67,19 @@ func normalizeEmail(email string) string {
 	return strings.ToLower(strings.TrimSpace(email))
 }
 
+// ParseProvince validates a province coordinate string in the canonical compact
+// form "(q,r)" and returns it unchanged. It is the exported form of the check
+// Create applies to a starting province; the command layer uses it to match a
+// province against the game's allowed starting provinces. A non-canonical string
+// is rejected with ErrInvalidProvince.
+func ParseProvince(s string) (string, error) {
+	h, err := canonicalProvince(s)
+	if err != nil {
+		return "", err
+	}
+	return h.String(), nil
+}
+
 // canonicalProvince validates that s is a province coordinate in the canonical
 // compact form "(q,r)" (no spaces) and returns the parsed hex. Anything else —
 // the spaced form "(q, r)", extra characters, a non-canonical sign or padding —

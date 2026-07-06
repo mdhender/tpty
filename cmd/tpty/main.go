@@ -55,6 +55,8 @@ func main() {
 //	tpty
 //	├── game
 //	│   └── create
+//	├── player
+//	│   └── create
 //	└── world
 //	    ├── generate
 //	    └── render
@@ -86,6 +88,7 @@ func newRootCommand() *ff.Command {
 
 	root.Subcommands = []*ff.Command{
 		newGameCommand(rootFlags, data),
+		newPlayerCommand(rootFlags, data),
 		newWorldCommand(rootFlags, data),
 	}
 	return root
@@ -178,6 +181,108 @@ func createGame(data, id string, seeds tpty.Seeds) error {
 
 	fmt.Printf("created game %q (seed1=%d seed2=%d)\n", id, seeds.Seed1, seeds.Seed2)
 	fmt.Printf("wrote %s\n", path)
+	return nil
+}
+
+// newPlayerCommand builds the "player" resource command and its subcommands.
+func newPlayerCommand(parent *ff.FlagSet, data *string) *ff.Command {
+	playerFlags := ff.NewFlagSet("player").SetParent(parent)
+
+	player := &ff.Command{
+		Name:      "player",
+		Usage:     "tpty player [FLAGS] SUBCOMMAND ...",
+		ShortHelp: "create and manage players",
+		Flags:     playerFlags,
+		Exec: func(ctx context.Context, args []string) error {
+			// No subcommand selected; show help.
+			return ff.ErrHelp
+		},
+	}
+
+	player.Subcommands = []*ff.Command{
+		newPlayerCreateCommand(playerFlags, data),
+	}
+	return player
+}
+
+// newPlayerCreateCommand builds the "player create" command, which adds a player
+// to the game and writes the players file named in the manifest.
+//
+// See the reference documentation at content/docs/reference/players.md.
+func newPlayerCreateCommand(parent *ff.FlagSet, data *string) *ff.Command {
+	fs := ff.NewFlagSet("create").SetParent(parent)
+	email := fs.StringLong("email", "", "the player's `email` address")
+	handle := fs.StringLong("handle", "", "the player's `handle`")
+	province := fs.StringLong("starting-province", "", "the player's starting `province` in compact form, e.g. (-1,0)")
+
+	return &ff.Command{
+		Name:      "create",
+		Usage:     "tpty player create [FLAGS]",
+		ShortHelp: "create a new player",
+		Flags:     fs,
+		Exec: func(ctx context.Context, args []string) error {
+			if len(args) > 0 {
+				return fmt.Errorf("unexpected argument %q: this command takes flags only, no positional arguments", args[0])
+			}
+			if *data == "" {
+				return fmt.Errorf("--data is required")
+			}
+			if *email == "" {
+				return fmt.Errorf("--email is required")
+			}
+			if *handle == "" {
+				return fmt.Errorf("--handle is required")
+			}
+			if *province == "" {
+				return fmt.Errorf("--starting-province is required")
+			}
+			return createPlayer(*data, *email, *handle, *province)
+		},
+	}
+}
+
+// createPlayer adds a player to the game. It validates the starting province
+// against the game's allowed starting provinces, derives the player's seeds and
+// password from the game's master seeds, and writes the updated players file.
+func createPlayer(data, email, handle, province string) error {
+	game, files, err := loadGame(data)
+	if err != nil {
+		return err
+	}
+
+	// The starting province must be one of the game's allowed starting provinces.
+	canonical, err := tpty.ParseProvince(province)
+	if err != nil {
+		return err
+	}
+	allowed, err := loadStartingProvinces(files.StartingProvinces)
+	if err != nil {
+		return err
+	}
+	if !allowed[canonical] {
+		return fmt.Errorf("starting province %s is not allowed for this game (see %s)", canonical, files.StartingProvinces)
+	}
+
+	store, err := loadPlayers(files.Players)
+	if err != nil {
+		return err
+	}
+
+	player, err := store.Create(game.Seeds, email, handle, canonical)
+	if err != nil {
+		return err
+	}
+
+	if err := writeJSON(files.Players, store); err != nil {
+		return fmt.Errorf("write players: %w", err)
+	}
+
+	fmt.Printf("created player %d in game %q\n", player.ID, game.ID)
+	fmt.Printf("  handle:   %s\n", player.Handle)
+	fmt.Printf("  email:    %s\n", player.Email)
+	fmt.Printf("  province: %s\n", player.StartingProvince)
+	fmt.Printf("  password: %s\n", player.Password)
+	fmt.Printf("wrote %s\n", files.Players)
 	return nil
 }
 
@@ -341,6 +446,45 @@ func loadGame(data string) (*tpty.Game, tpty.GameFiles, error) {
 		return nil, tpty.GameFiles{}, fmt.Errorf("parse %s: %w", path, err)
 	}
 	return &game, game.Files.Resolve(data), nil
+}
+
+// loadPlayers reads the players file at path into a store. A missing file yields
+// a new, empty store, so the first player can be created before the file exists.
+func loadPlayers(path string) (*tpty.PlayerStore, error) {
+	buf, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return tpty.NewPlayerStore(), nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read players: %w", err)
+	}
+	var store tpty.PlayerStore
+	if err := json.Unmarshal(buf, &store); err != nil {
+		return nil, fmt.Errorf("parse %s: %w", path, err)
+	}
+	return &store, nil
+}
+
+// loadStartingProvinces reads the allowed starting provinces at path into a set,
+// validating that each entry is a canonical compact province string.
+func loadStartingProvinces(path string) (map[string]bool, error) {
+	buf, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read starting provinces: %w", err)
+	}
+	var list []string
+	if err := json.Unmarshal(buf, &list); err != nil {
+		return nil, fmt.Errorf("parse %s: %w", path, err)
+	}
+	set := make(map[string]bool, len(list))
+	for _, p := range list {
+		canonical, err := tpty.ParseProvince(p)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", path, err)
+		}
+		set[canonical] = true
+	}
+	return set, nil
 }
 
 // writeJSON encodes v as indented JSON and writes it to path, creating parent

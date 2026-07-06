@@ -232,6 +232,20 @@ func TestPlayerPasswordDependsOnProvince(t *testing.T) {
 	}
 }
 
+func TestParseProvince(t *testing.T) {
+	for _, s := range []string{"(0,0)", "(-1,0)", "(2,-3)"} {
+		got, err := ParseProvince(s)
+		if err != nil || got != s {
+			t.Errorf("ParseProvince(%q) = (%q, %v), want (%q, nil)", s, got, err, s)
+		}
+	}
+	for _, s := range []string{"(0, 0)", "0,0", "(+1,0)", "north", ""} {
+		if _, err := ParseProvince(s); !errors.Is(err, ErrInvalidProvince) {
+			t.Errorf("ParseProvince(%q) err = %v, want ErrInvalidProvince", s, err)
+		}
+	}
+}
+
 func TestValidateHandle(t *testing.T) {
 	valid := []string{"ab", "Al", "player-1", "j.doe", "a_b.c-d", "Bo Peep"}
 	invalid := []string{"a", "1player", "Bo  Peep", "Bo ", " Bo", "joe!", "", "Bo\tPeep"}
