@@ -66,11 +66,11 @@ origin is `(0, -k)`.
 
 ## Determinism
 
-The world is deterministic: the same seeds always produce the same world. The
-game records two master seeds (see
-[Games]({{< relref "/docs/reference/games.md" >}})); when the world is generated
-it derives its own master seeds from the game's, and every terrain draw comes
-from the world's seeds. Both are `uint64` pairs (`seed1`, `seed2`).
+The world is deterministic: the same seeds always produce the same world. When
+the world is generated it derives its own master seeds from the game's (see
+[Games]({{< relref "/docs/reference/games.md" >}})), and every terrain draw comes
+from the world's seeds. For how seeds, streams, and terrain addresses work, see
+[Determinism]({{< relref "/docs/reference/determinism.md" >}}).
 
 ## Generation
 
@@ -112,4 +112,5 @@ the data directory:
 
 ## See also
 
+- [Determinism]({{< relref "/docs/reference/determinism.md" >}})
 - [Glossary]({{< relref "/docs/reference/glossary.md" >}})

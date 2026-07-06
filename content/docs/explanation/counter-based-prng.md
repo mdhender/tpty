@@ -3,11 +3,11 @@ title: Counter-Based PRNGs
 weight: 2
 ---
 
-This page is *about* how the game draws random numbers. The observable promise —
-that the same master seeds always produce the same game — is stated in the
-[world generation reference]({{< relref "/docs/reference/world-generation.md" >}}).
-Here we discuss how that promise is kept, why the design looks the way it does,
-and where it sits in the wider literature.
+This page is *about* how the game draws random numbers. The mechanism itself —
+master seeds, streams, key paths, and the domain tags — is described in the
+[determinism reference]({{< relref "/docs/reference/determinism.md" >}}). Here we
+discuss how that mechanism keeps its promises, why the design looks the way it
+does, and where it sits in the wider literature.
 
 ## Two demands that ordinary randomness can't meet
 
@@ -71,17 +71,12 @@ and — as below — it validates a choice we might otherwise have second-guesse
 
 ## Addressing: key paths and domain tags
 
-An address is a **key path**: a short, flat sequence of integers. By convention
-its first element is a **domain tag** — a named constant identifying the purpose
-of the draw — and the remaining elements identify the specific instance:
-
-```go
-type Key int64
-
-const KeyTerrain Key = iota + 1 // domain tags live in one enumerated block
-
-stream := seeds.Stream(KeyTerrain, Key(q), Key(r))
-```
+An address is a **key path**: a short, flat sequence of integers whose first
+element is a **domain tag** naming the purpose of the draw, with the remaining
+elements identifying the specific instance (terrain uses a province's `(q, r)`).
+The [determinism reference]({{< relref "/docs/reference/determinism.md" >}}) gives
+the exact types and the current domain tags; here we care about *why* it takes
+this shape.
 
 An early draft split this into a string "key" for the purpose and an integer
 "leaf" for the instance. Collapsing both into one integer type felt like a hack —
@@ -156,6 +151,7 @@ need today, and the rest can wait without any loss of safety.
 
 ## See also
 
+- [Determinism reference]({{< relref "/docs/reference/determinism.md" >}}) — the facts this design implements: seeds, streams, and key paths
 - [World generation reference]({{< relref "/docs/reference/world-generation.md" >}}) — the determinism guarantee this design keeps
 - [World generation explanation]({{< relref "/docs/explanation/world-generation.md" >}}) — why terrain is addressed per province
 - [Random123: counter-based RNGs (D.E. Shaw Research)](https://github.com/DEShawResearch/random123)

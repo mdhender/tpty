@@ -57,12 +57,15 @@ passes.
 ## Engine determinism (implementation)
 
 The engine must be deterministic: the same master seeds always reproduce the
-same game. This is an implementation constraint on engine code (the reference
-only documents the observable guarantee).
+same game. This is an implementation constraint on engine code; the
+[Determinism reference](content/docs/reference/determinism.md) is the
+authoritative description of the mechanism (seeds, streams, key paths, and the
+domain tags). Keep this section and that reference in sync.
 
 This is a counter-based / spawn-keyed PRNG. See the
 [Counter-Based PRNGs](content/docs/explanation/counter-based-prng.md)
-explanation for the why; the rules below are how.
+explanation for the why; the reference for what it is; the rules below are the
+constraints agents must hold to.
 
 - A game records two `uint64` master seeds, `seed1` and `seed2` (`tpty.Seeds`).
 - A stream is addressed by a **key path**: `Seeds.Stream(path ...Key)` (see

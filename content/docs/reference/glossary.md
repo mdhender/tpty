@@ -28,7 +28,8 @@ Definitions of terms used across the reference.
 : One of the two `uint64` values (`seed1`, `seed2`) saved for a game in its
   `game.json`. Together they are the root of the game's randomness; each
   subsystem derives its own seeds from them. See
-  [Games]({{< relref "/docs/reference/games.md" >}}).
+  [Games]({{< relref "/docs/reference/games.md" >}}) and
+  [Determinism]({{< relref "/docs/reference/determinism.md" >}}).
 
 **Origin**
 : The center hex of the world, at axial coordinates `(0, 0)`.
