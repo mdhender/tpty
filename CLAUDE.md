@@ -60,13 +60,31 @@ The engine must be deterministic: the same master seeds always reproduce the
 same game. This is an implementation constraint on engine code (the reference
 only documents the observable guarantee).
 
-- A game records two `uint64` master seeds, `seed1` and `seed2` (`tpty.Seeds`),
-  used to seed PCG sources (`math/rand/v2`).
-- Derive PRNG streams from the master seeds rather than reusing one source.
-  `Seeds.Stream(key string, leaf ...int64)` (see `streams.go`) hashes the master
-  seeds with a **key** (a string naming the stream's purpose, e.g.
-  `"world.terrain"`) and a **leaf** (values identifying the specific item, e.g. a
-  province's `q, r`) via SHA-256, and uses the digest to seed a PCG source.
-- Prefer keying a stream by the item's own identity (coordinates, id) so draws
-  do not depend on iteration order at all. Never range over a Go map where the
-  iteration order would change the order of random draws.
+This is a counter-based / spawn-keyed PRNG. See the
+[Counter-Based PRNGs](content/docs/explanation/counter-based-prng.md)
+explanation for the why; the rules below are how.
+
+- A game records two `uint64` master seeds, `seed1` and `seed2` (`tpty.Seeds`).
+- A stream is addressed by a **key path**: `Seeds.Stream(path ...Key)` (see
+  `streams.go`), where `type Key int64`. It hashes the master seeds with the key
+  path via SHA-256 and seeds a PCG source (`math/rand/v2`) with the digest.
+- The first element of a key path is a **domain tag** — a named constant naming
+  the stream's purpose. The remaining elements identify the specific instance;
+  coerce identifiers (coordinates, ids) to `Key`. For example:
+
+  ```go
+  const KeyTerrain Key = iota + 1 // domain tags: one enumerated block
+  stream := seeds.Stream(KeyTerrain, Key(h.Q), Key(h.R))
+  ```
+
+- **Keep every domain tag in one enumerated block, starting at 1** (reserve 0 as
+  invalid). The block is **append-only**: never reorder or insert constants —
+  `iota` would renumber the rest and silently change every existing game.
+- **Do not change how an address is built** once games exist (the order of a key
+  path's elements, the coercions, the length-prefixing). The key-path encoding
+  is a frozen compatibility surface, like a save format.
+- The hash **length-prefixes the key path**, so `[K, q]` and `[K, q, r]` cannot
+  collide. Keep that.
+- **Address a stream by the item's own identity** (coordinates, id), not by
+  visit order, so draws are order-independent. Never range over a Go map where
+  the iteration order would change the order of random draws.
