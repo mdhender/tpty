@@ -156,6 +156,54 @@ The default set is a starting point that the GM may edit afterward. The current
 selection is purely geometric; it is expected to improve later (for example, a
 short walk from the computed hex toward better nearby terrain).
 
+### The allowed-provinces file
+
+The allowed set is stored in the `starting-provinces.json` file named in the
+game's manifest. It is a JSON array of provinces in canonical compact `(q,r)`
+form, in the order the GM added them:
+
+```json
+[
+  "(0,-2)",
+  "(2,-2)",
+  "(2,0)"
+]
+```
+
+Rules for the file:
+
+- Each entry is a province coordinate in **canonical compact form** — `(q,r)`
+  with no spaces, no leading `+`, and no padding (for example `(-1,0)`, not
+  `(-1, 0)`).
+- Entries are **unique**: the same province may not appear twice.
+- **Order is preserved.** New provinces are appended; the order carries no
+  meaning but is kept stable so the file reads predictably.
+- A **missing file** and an **empty array** both mean "no starting provinces
+  defined". Player creation fails until at least one exists.
+
+Entries are validated only for canonical form and uniqueness. A starting
+province is not required to name a province that exists in the generated world;
+naming a hex outside the world is allowed but will leave no player able to start
+there. Keeping the set within the world is the GM's responsibility.
+
+### Managing the set
+
+The GM maintains the allowed set with these commands, rather than editing the
+file by hand:
+
+- `tpty world starting-provinces generate` — write the default six (see above).
+- `tpty world starting-provinces add --province (q,r)` — append one province.
+  Rejects a non-canonical coordinate and a province already in the set.
+- `tpty world starting-provinces remove --province (q,r)` — remove one province.
+  Rejects a province that is not in the set. Warns, but proceeds, if a player is
+  already placed on the removed province: that player is left on a province no
+  longer allowed, which the GM must resolve.
+- `tpty world starting-provinces list` — print the allowed set.
+
+Removing a province does not change any existing player: a player keeps its
+recorded starting province even after that province leaves the allowed set. The
+allowed set constrains only new placements.
+
 ## Command
 
 World generation is provided by the `cmd/tpty` command. It writes two files into

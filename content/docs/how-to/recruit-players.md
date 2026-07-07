@@ -14,16 +14,28 @@ You need a game with a generated world. See
 
 ## Offer starting provinces
 
-Players choose where they start, from a list you control. Maintain that list in
-the `starting-provinces.json` file named in the game's manifest — a JSON array of
-provinces in compact `(q,r)` form:
+Players choose where they start, from a list you control: the game's **allowed
+starting provinces**. `player create` rejects any starting province not in this
+list.
 
-```json
-["(0,0)", "(-1,0)", "(2,0)"]
+The quickest way to seed the list is the default set:
+
+```sh
+tpty world starting-provinces generate --data path/to/data
 ```
 
-Choose provinces from the world you generated. `player create` rejects any
-starting province that is not in this list.
+Then tailor it with `add` and `remove`, and review it with `list`:
+
+```sh
+tpty world starting-provinces add    --data path/to/data --province "(-1,0)"
+tpty world starting-provinces remove --data path/to/data --province "(2,0)"
+tpty world starting-provinces list   --data path/to/data
+```
+
+Provinces are named in compact `(q,r)` form and must be unique. Choose provinces
+from the world you generated. See the
+[Starting provinces reference]({{< relref "/docs/reference/world-generation.md#starting-provinces" >}})
+for the file format and the full rules.
 
 ## Recruit
 

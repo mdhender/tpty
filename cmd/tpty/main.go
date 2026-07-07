@@ -67,7 +67,10 @@ func main() {
 //	    ├── generate
 //	    ├── render
 //	    └── starting-provinces
-//	        └── generate
+//	        ├── add
+//	        ├── generate
+//	        ├── list
+//	        └── remove
 //
 // Commands are noun-verb (resource then action). All commands take flags only;
 // positional arguments are rejected.
@@ -275,10 +278,10 @@ func createPlayer(data, email, handle, province string) error {
 	// An absent or empty allowed set means no player can be placed. Failing is
 	// correct, but the GM needs to know what's wrong and how to fix it rather
 	// than a raw "no such file" or a misleading per-province "not allowed".
-	if len(allowed) == 0 {
-		return fmt.Errorf("no starting provinces are defined for this game; create %s (a JSON array of provinces in compact form, e.g. [\"(0,0)\",\"(1,-1)\"])", files.StartingProvinces)
+	if allowed.Len() == 0 {
+		return fmt.Errorf("no starting provinces are defined for this game; add one with 'tpty world starting-provinces add --province %s' or generate the defaults", canonical)
 	}
-	if !allowed[canonical] {
+	if !allowed.Contains(canonical) {
 		return fmt.Errorf("starting province %s is not allowed for this game (see %s)", canonical, files.StartingProvinces)
 	}
 
@@ -638,8 +641,8 @@ func newWorldCommand(parent *ff.FlagSet, data *string) *ff.Command {
 }
 
 // newWorldStartingProvincesCommand builds the "world starting-provinces" group,
-// which manages the game's allowed starting provinces. It currently offers the
-// "generate" verb; management verbs (list, add, remove) are future siblings.
+// which manages the game's allowed starting provinces: "generate" writes the
+// default set, and "add", "remove", and "list" maintain it afterward.
 func newWorldStartingProvincesCommand(parent *ff.FlagSet, data *string) *ff.Command {
 	spFlags := ff.NewFlagSet("starting-provinces").SetParent(parent)
 
@@ -655,9 +658,181 @@ func newWorldStartingProvincesCommand(parent *ff.FlagSet, data *string) *ff.Comm
 	}
 
 	sp.Subcommands = []*ff.Command{
+		newWorldStartingProvincesAddCommand(spFlags, data),
 		newWorldStartingProvincesGenerateCommand(spFlags, data),
+		newWorldStartingProvincesListCommand(spFlags, data),
+		newWorldStartingProvincesRemoveCommand(spFlags, data),
 	}
 	return sp
+}
+
+// newWorldStartingProvincesAddCommand builds the
+// "world starting-provinces add" command, which appends one province to the
+// game's allowed starting provinces.
+//
+// See content/docs/reference/world-generation.md for the rules.
+func newWorldStartingProvincesAddCommand(parent *ff.FlagSet, data *string) *ff.Command {
+	fs := ff.NewFlagSet("add").SetParent(parent)
+	province := fs.StringLong("province", "", "the `province` to add, in compact form, e.g. (-1,0)")
+
+	return &ff.Command{
+		Name:      "add",
+		Usage:     "tpty world starting-provinces add [FLAGS]",
+		ShortHelp: "add a starting province",
+		Flags:     fs,
+		Exec: func(ctx context.Context, args []string) error {
+			if len(args) > 0 {
+				return fmt.Errorf("unexpected argument %q: this command takes flags only, no positional arguments", args[0])
+			}
+			if *data == "" {
+				return fmt.Errorf("--data is required")
+			}
+			if *province == "" {
+				return fmt.Errorf("--province is required")
+			}
+			return addStartingProvince(*data, *province)
+		},
+	}
+}
+
+// newWorldStartingProvincesRemoveCommand builds the
+// "world starting-provinces remove" command, which removes one province from the
+// game's allowed starting provinces.
+//
+// See content/docs/reference/world-generation.md for the rules.
+func newWorldStartingProvincesRemoveCommand(parent *ff.FlagSet, data *string) *ff.Command {
+	fs := ff.NewFlagSet("remove").SetParent(parent)
+	province := fs.StringLong("province", "", "the `province` to remove, in compact form, e.g. (-1,0)")
+
+	return &ff.Command{
+		Name:      "remove",
+		Usage:     "tpty world starting-provinces remove [FLAGS]",
+		ShortHelp: "remove a starting province",
+		Flags:     fs,
+		Exec: func(ctx context.Context, args []string) error {
+			if len(args) > 0 {
+				return fmt.Errorf("unexpected argument %q: this command takes flags only, no positional arguments", args[0])
+			}
+			if *data == "" {
+				return fmt.Errorf("--data is required")
+			}
+			if *province == "" {
+				return fmt.Errorf("--province is required")
+			}
+			return removeStartingProvince(*data, *province)
+		},
+	}
+}
+
+// newWorldStartingProvincesListCommand builds the
+// "world starting-provinces list" command, which prints the game's allowed
+// starting provinces.
+func newWorldStartingProvincesListCommand(parent *ff.FlagSet, data *string) *ff.Command {
+	fs := ff.NewFlagSet("list").SetParent(parent)
+
+	return &ff.Command{
+		Name:      "list",
+		Usage:     "tpty world starting-provinces list [FLAGS]",
+		ShortHelp: "list the game's starting provinces",
+		Flags:     fs,
+		Exec: func(ctx context.Context, args []string) error {
+			if len(args) > 0 {
+				return fmt.Errorf("unexpected argument %q: this command takes flags only, no positional arguments", args[0])
+			}
+			if *data == "" {
+				return fmt.Errorf("--data is required")
+			}
+			return listStartingProvinces(*data)
+		},
+	}
+}
+
+// addStartingProvince appends province to the game's allowed starting provinces
+// and writes the updated file. A non-canonical province, or one already in the
+// set, is an error and nothing is written.
+func addStartingProvince(data, province string) error {
+	game, files, err := loadGame(data)
+	if err != nil {
+		return err
+	}
+	set, err := loadStartingProvinces(files.StartingProvinces)
+	if err != nil {
+		return err
+	}
+	canonical, err := set.Add(province)
+	if err != nil {
+		return err
+	}
+	if err := writeJSON(files.StartingProvinces, set.List()); err != nil {
+		return fmt.Errorf("write starting provinces: %w", err)
+	}
+
+	fmt.Printf("added starting province %s to game %q (%d total)\n", canonical, game.ID, set.Len())
+	fmt.Printf("wrote %s\n", files.StartingProvinces)
+	return nil
+}
+
+// removeStartingProvince removes province from the game's allowed starting
+// provinces and writes the updated file. A non-canonical province, or one not in
+// the set, is an error and nothing is written. If a player is already placed on
+// the removed province it warns (but proceeds): that player is left on a province
+// no longer allowed, which the GM must resolve.
+func removeStartingProvince(data, province string) error {
+	game, files, err := loadGame(data)
+	if err != nil {
+		return err
+	}
+	set, err := loadStartingProvinces(files.StartingProvinces)
+	if err != nil {
+		return err
+	}
+	canonical, err := set.Remove(province)
+	if err != nil {
+		return err
+	}
+
+	// Surface players stranded by the removal. loadPlayers yields an empty store
+	// when the file is absent, so this is a no-op before any player exists.
+	store, err := loadPlayers(files.Players)
+	if err != nil {
+		return err
+	}
+	for _, p := range store.Players {
+		if p.StartingProvince == canonical {
+			fmt.Fprintf(os.Stderr, "warning: player %d (%s) is placed on %s, which is no longer an allowed starting province\n", p.ID, p.Handle, canonical)
+		}
+	}
+
+	if err := writeJSON(files.StartingProvinces, set.List()); err != nil {
+		return fmt.Errorf("write starting provinces: %w", err)
+	}
+
+	fmt.Printf("removed starting province %s from game %q (%d remaining)\n", canonical, game.ID, set.Len())
+	fmt.Printf("wrote %s\n", files.StartingProvinces)
+	return nil
+}
+
+// listStartingProvinces prints the game's allowed starting provinces in order.
+func listStartingProvinces(data string) error {
+	game, files, err := loadGame(data)
+	if err != nil {
+		return err
+	}
+	set, err := loadStartingProvinces(files.StartingProvinces)
+	if err != nil {
+		return err
+	}
+
+	if set.Len() == 0 {
+		fmt.Printf("game %q has no starting provinces\n", game.ID)
+		return nil
+	}
+
+	fmt.Printf("game %q has %d starting province(s):\n", game.ID, set.Len())
+	for _, p := range set.List() {
+		fmt.Printf("  %s\n", p)
+	}
+	return nil
 }
 
 // newWorldStartingProvincesGenerateCommand builds the
@@ -933,13 +1108,14 @@ func loadPlayers(path string) (*tpty.PlayerStore, error) {
 }
 
 // loadStartingProvinces reads the allowed starting provinces at path into a set,
-// validating that each entry is a canonical compact province string. A missing
-// file yields an empty set, so callers can distinguish "no provinces defined"
-// (an actionable condition) from a genuine read/parse failure.
-func loadStartingProvinces(path string) (map[string]bool, error) {
+// validating that each entry is a canonical compact province string and that no
+// entry repeats. A missing file yields an empty set, so callers can distinguish
+// "no provinces defined" (an actionable condition) from a genuine read/parse
+// failure.
+func loadStartingProvinces(path string) (*tpty.StartingProvinceSet, error) {
 	buf, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
-		return map[string]bool{}, nil
+		return tpty.NewStartingProvinceSet(), nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("read starting provinces: %w", err)
@@ -948,13 +1124,9 @@ func loadStartingProvinces(path string) (map[string]bool, error) {
 	if err := json.Unmarshal(buf, &list); err != nil {
 		return nil, fmt.Errorf("parse %s: %w", path, err)
 	}
-	set := make(map[string]bool, len(list))
-	for _, p := range list {
-		canonical, err := tpty.ParseProvince(p)
-		if err != nil {
-			return nil, fmt.Errorf("%s: %w", path, err)
-		}
-		set[canonical] = true
+	set, err := tpty.ParseStartingProvinceSet(list)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 	return set, nil
 }

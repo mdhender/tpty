@@ -2,7 +2,101 @@
 
 package tpty
 
-import "fmt"
+import (
+	"fmt"
+	"slices"
+
+	"github.com/mdhender/tpty/cerrs"
+)
+
+// Errors returned when managing a game's allowed starting provinces.
+const (
+	ErrDuplicateStartingProvince = cerrs.Error("duplicate starting province")
+	ErrUnknownStartingProvince   = cerrs.Error("unknown starting province")
+)
+
+// StartingProvinceSet is a game's allowed starting provinces: the provinces a
+// player may be placed on. It keeps entries unique and in the order they were
+// added, and is the in-memory form of the manifest's starting-provinces.json.
+//
+// Each province is a canonical compact "(q,r)" string. Entries are validated for
+// canonical form and uniqueness only; a starting province is not required to
+// name a province of the generated world.
+//
+// See content/docs/reference/world-generation.md for the rules.
+type StartingProvinceSet struct {
+	provinces []string
+}
+
+// NewStartingProvinceSet returns an empty set.
+func NewStartingProvinceSet() *StartingProvinceSet {
+	return &StartingProvinceSet{}
+}
+
+// ParseStartingProvinceSet builds a set from a list of province strings,
+// preserving order. Each entry must be in canonical compact form and no entry
+// may repeat; a non-canonical province is rejected with ErrInvalidProvince and a
+// repeat with ErrDuplicateStartingProvince.
+func ParseStartingProvinceSet(list []string) (*StartingProvinceSet, error) {
+	s := &StartingProvinceSet{provinces: make([]string, 0, len(list))}
+	for _, p := range list {
+		if _, err := s.Add(p); err != nil {
+			return nil, err
+		}
+	}
+	return s, nil
+}
+
+// Add validates province and appends it to the set, returning the canonical form
+// stored. A non-canonical province is rejected with ErrInvalidProvince; one
+// already in the set with ErrDuplicateStartingProvince.
+func (s *StartingProvinceSet) Add(province string) (string, error) {
+	canonical, err := ParseProvince(province)
+	if err != nil {
+		return "", err
+	}
+	if s.Contains(canonical) {
+		return "", fmt.Errorf("%s: %w", canonical, ErrDuplicateStartingProvince)
+	}
+	s.provinces = append(s.provinces, canonical)
+	return canonical, nil
+}
+
+// Remove validates province and removes it from the set, returning the canonical
+// form removed and preserving the order of the rest. A non-canonical province is
+// rejected with ErrInvalidProvince; a province not in the set with
+// ErrUnknownStartingProvince.
+func (s *StartingProvinceSet) Remove(province string) (string, error) {
+	canonical, err := ParseProvince(province)
+	if err != nil {
+		return "", err
+	}
+	for i, p := range s.provinces {
+		if p == canonical {
+			s.provinces = append(s.provinces[:i], s.provinces[i+1:]...)
+			return canonical, nil
+		}
+	}
+	return "", fmt.Errorf("%s: %w", canonical, ErrUnknownStartingProvince)
+}
+
+// Contains reports whether province (a canonical compact string) is in the set.
+func (s *StartingProvinceSet) Contains(province string) bool {
+	return slices.Contains(s.provinces, province)
+}
+
+// List returns the set's provinces in order as a fresh slice the caller may
+// modify without affecting the set.
+func (s *StartingProvinceSet) List() []string {
+	out := make([]string, len(s.provinces))
+	copy(out, s.provinces)
+	return out
+}
+
+// Len returns the number of provinces in the set.
+func (s *StartingProvinceSet) Len() int {
+	return len(s.provinces)
+}
 
 // startingProvinceDirs are the six flat-top directions, in the deterministic
 // order the default starting provinces are always listed: N, NE, SE, S, SW, NW.

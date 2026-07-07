@@ -26,8 +26,8 @@ func TestLoadStartingProvincesMissingFile(t *testing.T) {
 	if set == nil {
 		t.Fatal("loadStartingProvinces(missing) set = nil, want empty non-nil set")
 	}
-	if len(set) != 0 {
-		t.Errorf("loadStartingProvinces(missing) len = %d, want 0", len(set))
+	if set.Len() != 0 {
+		t.Errorf("loadStartingProvinces(missing) len = %d, want 0", set.Len())
 	}
 }
 
@@ -39,8 +39,8 @@ func TestLoadStartingProvincesEmptyArray(t *testing.T) {
 	if err != nil {
 		t.Fatalf("loadStartingProvinces([]) error = %v, want nil", err)
 	}
-	if len(set) != 0 {
-		t.Errorf("loadStartingProvinces([]) len = %d, want 0", len(set))
+	if set.Len() != 0 {
+		t.Errorf("loadStartingProvinces([]) len = %d, want 0", set.Len())
 	}
 }
 
@@ -53,12 +53,12 @@ func TestLoadStartingProvincesValid(t *testing.T) {
 		t.Fatalf("loadStartingProvinces(valid) error = %v, want nil", err)
 	}
 	for _, want := range []string{"(0,0)", "(1,-1)"} {
-		if !set[want] {
-			t.Errorf("loadStartingProvinces(valid) missing %q; set = %v", want, set)
+		if !set.Contains(want) {
+			t.Errorf("loadStartingProvinces(valid) missing %q; set = %v", want, set.List())
 		}
 	}
-	if len(set) != 2 {
-		t.Errorf("loadStartingProvinces(valid) len = %d, want 2", len(set))
+	if set.Len() != 2 {
+		t.Errorf("loadStartingProvinces(valid) len = %d, want 2", set.Len())
 	}
 }
 
@@ -67,9 +67,10 @@ func TestLoadStartingProvincesValid(t *testing.T) {
 // does not mask genuine problems.
 func TestLoadStartingProvincesErrors(t *testing.T) {
 	tests := map[string]string{
-		"malformed json":   `{`,
-		"not a string":     `[123]`,
-		"invalid province": `["not-a-province"]`,
+		"malformed json":     `{`,
+		"not a string":       `[123]`,
+		"invalid province":   `["not-a-province"]`,
+		"duplicate province": `["(0,0)","(0,0)"]`,
 	}
 	for name, content := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -236,6 +237,143 @@ func TestGenerateStartingProvincesWarnsWhenPlayersExist(t *testing.T) {
 	if got := readProvinces(t, dir); len(got) != 6 {
 		t.Errorf("wrote %d provinces, want 6", len(got))
 	}
+}
+
+// TestAddStartingProvinceCreatesAndAppends confirms "add" creates the file when
+// absent and appends in order, keeping entries unique.
+func TestAddStartingProvinceCreatesAndAppends(t *testing.T) {
+	dir := setupGameDir(t, 3)
+
+	for _, p := range []string{"(0,0)", "(1,-1)"} {
+		if _, _, err := captureErr(t, func() error { return addStartingProvince(dir, p) }); err != nil {
+			t.Fatalf("addStartingProvince(%q): %v", p, err)
+		}
+	}
+	if got := readProvinces(t, dir); !equalStrings(got, []string{"(0,0)", "(1,-1)"}) {
+		t.Errorf("after adds, file = %v, want [(0,0) (1,-1)]", got)
+	}
+
+	// A duplicate is rejected and the file is unchanged.
+	if _, _, err := captureErr(t, func() error { return addStartingProvince(dir, "(0,0)") }); err == nil {
+		t.Error("adding a duplicate = nil error, want an error")
+	}
+	if got := readProvinces(t, dir); len(got) != 2 {
+		t.Errorf("duplicate add changed the file: %v", got)
+	}
+
+	// A non-canonical province is rejected.
+	if _, _, err := captureErr(t, func() error { return addStartingProvince(dir, "(0, 0)") }); err == nil {
+		t.Error("adding a non-canonical province = nil error, want an error")
+	}
+}
+
+// TestRemoveStartingProvince confirms "remove" deletes an entry, rejects an
+// absent one, and leaves the rest in order.
+func TestRemoveStartingProvince(t *testing.T) {
+	dir := setupGameDir(t, 3)
+	seedStartingProvinces(t, dir, `["(0,0)","(1,-1)","(-2,0)"]`)
+
+	if _, _, err := captureErr(t, func() error { return removeStartingProvince(dir, "(1,-1)") }); err != nil {
+		t.Fatalf("removeStartingProvince: %v", err)
+	}
+	if got := readProvinces(t, dir); !equalStrings(got, []string{"(0,0)", "(-2,0)"}) {
+		t.Errorf("after remove, file = %v, want [(0,0) (-2,0)]", got)
+	}
+
+	// Removing a province not in the set is an error, and the file is unchanged.
+	if _, _, err := captureErr(t, func() error { return removeStartingProvince(dir, "(9,9)") }); err == nil {
+		t.Error("removing an absent province = nil error, want an error")
+	}
+	if got := readProvinces(t, dir); len(got) != 2 {
+		t.Errorf("failed remove changed the file: %v", got)
+	}
+}
+
+// TestRemoveStartingProvinceWarnsOnStrandedPlayer confirms removing a province a
+// player is placed on warns (but proceeds).
+func TestRemoveStartingProvinceWarnsOnStrandedPlayer(t *testing.T) {
+	dir := setupGameDir(t, 3)
+	seedStartingProvinces(t, dir, `["(0,0)","(1,-1)"]`)
+	players := `{"next_id":2,"players":[{"id":1,"handle":"alice","email":"a@x.com","starting_province":"(1,-1)","password":"x","seeds":{"seed1":1,"seed2":2}}]}`
+	if err := os.WriteFile(filepath.Join(dir, "players.json"), []byte(players), 0o644); err != nil {
+		t.Fatalf("seed players.json: %v", err)
+	}
+
+	_, stderr, err := captureErr(t, func() error { return removeStartingProvince(dir, "(1,-1)") })
+	if err != nil {
+		t.Fatalf("removeStartingProvince: %v", err)
+	}
+	if !strings.Contains(stderr, "warning") || !strings.Contains(stderr, "alice") {
+		t.Errorf("stderr = %q, want a warning naming the stranded player", stderr)
+	}
+	// The removal still happened.
+	if got := readProvinces(t, dir); !equalStrings(got, []string{"(0,0)"}) {
+		t.Errorf("after remove, file = %v, want [(0,0)]", got)
+	}
+}
+
+// TestListStartingProvinces confirms "list" prints each province, and reports an
+// empty set distinctly.
+func TestListStartingProvinces(t *testing.T) {
+	dir := setupGameDir(t, 3)
+
+	// Empty set: a distinct message, no province lines.
+	stdout, _, err := captureErr(t, func() error { return listStartingProvinces(dir) })
+	if err != nil {
+		t.Fatalf("listStartingProvinces(empty): %v", err)
+	}
+	if !strings.Contains(stdout, "no starting provinces") {
+		t.Errorf("empty list stdout = %q, want a 'no starting provinces' message", stdout)
+	}
+
+	seedStartingProvinces(t, dir, `["(0,0)","(1,-1)"]`)
+	stdout, _, err = captureErr(t, func() error { return listStartingProvinces(dir) })
+	if err != nil {
+		t.Fatalf("listStartingProvinces: %v", err)
+	}
+	for _, want := range []string{"(0,0)", "(1,-1)"} {
+		if !strings.Contains(stdout, want) {
+			t.Errorf("list stdout = %q, want it to contain %q", stdout, want)
+		}
+	}
+}
+
+// TestAddedProvinceUnlocksPlayerCreate is an end-to-end check that a province is
+// not accepted for a player until it has been added to the allowed set.
+func TestAddedProvinceUnlocksPlayerCreate(t *testing.T) {
+	dir := setupGameDir(t, 3)
+
+	// With no allowed set, creating a player on (1,-1) fails.
+	if _, _, err := captureErr(t, func() error {
+		return createPlayer(dir, "a@x.com", "alice", "(1,-1)")
+	}); err == nil {
+		t.Fatal("createPlayer with no allowed set = nil error, want an error")
+	}
+
+	if _, _, err := captureErr(t, func() error { return addStartingProvince(dir, "(1,-1)") }); err != nil {
+		t.Fatalf("addStartingProvince: %v", err)
+	}
+	if _, _, err := captureErr(t, func() error {
+		return createPlayer(dir, "a@x.com", "alice", "(1,-1)")
+	}); err != nil {
+		t.Errorf("createPlayer after add = %v, want success", err)
+	}
+}
+
+// seedStartingProvinces writes a starting-provinces.json into dir.
+func seedStartingProvinces(t *testing.T, dir, content string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(dir, "starting-provinces.json"), []byte(content), 0o644); err != nil {
+		t.Fatalf("seed starting-provinces.json: %v", err)
+	}
+}
+
+// captureErr runs fn with output captured, returning stdout, stderr, and fn's
+// error. It is the error-returning companion to captureOutput.
+func captureErr(t *testing.T, fn func() error) (stdout, stderr string, err error) {
+	t.Helper()
+	stdout, stderr = captureOutput(t, func() { err = fn() })
+	return stdout, stderr, err
 }
 
 // runGenerate runs generateStartingProvinces with output captured, returning the
