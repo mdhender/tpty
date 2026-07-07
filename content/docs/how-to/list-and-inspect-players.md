@@ -13,13 +13,21 @@ or to resend a player their password.
 tpty player list --data path/to/data
 ```
 
-This prints a row per player with their id, handle, email, and starting
-province:
+This prints a row per player with their id, handle, email, starting province,
+and status:
 
 ```
-ID  HANDLE     EMAIL              STARTING PROVINCE
-1   Bo Peep    alice@example.com  (-1,0)
-2   little.bo  bob@example.com    (2,0)
+ID  HANDLE     EMAIL              STARTING PROVINCE  STATUS
+1   Bo Peep    alice@example.com  (-1,0)             active
+2   little.bo  bob@example.com    (2,0)              active
+```
+
+By default only active players are listed. To include
+[removed]({{< relref "/docs/how-to/remove-and-reactivate-a-player.md" >}})
+(inactive) players, pass `--all`:
+
+```sh
+tpty player list --data path/to/data --all
 ```
 
 ## Show one player
@@ -38,6 +46,7 @@ player 1 in game "my-game"
   email:    alice@example.com
   province: (-1,0)
   password: audio.watch.chain.baker.twins.dizzy.blob
+  status:   active
 ```
 
 This is how you look up a player's id and password to resend them.
@@ -46,6 +55,8 @@ This is how you look up a player's id and password to resend them.
 
 `player list`:
 
+- `--all` — include removed (inactive) players. By default only active players
+  are shown.
 - `--data` (required) — the game's data directory. May also be supplied as the
   `TPTY_DATA` environment variable.
 
@@ -59,5 +70,6 @@ This is how you look up a player's id and password to resend them.
 ## See also
 
 - [Recruit players and add them to a game]({{< relref "/docs/how-to/recruit-players.md" >}})
+- [Remove and reactivate a player]({{< relref "/docs/how-to/remove-and-reactivate-a-player.md" >}})
 - [Reset an exposed password]({{< relref "/docs/how-to/reset-a-password.md" >}})
 - [Players reference]({{< relref "/docs/reference/players.md" >}})

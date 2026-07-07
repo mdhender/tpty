@@ -59,6 +59,8 @@ func main() {
 //	├── player
 //	│   ├── create
 //	│   ├── list
+//	│   ├── reactivate
+//	│   ├── remove
 //	│   ├── reset-password
 //	│   └── show
 //	└── world
@@ -208,6 +210,8 @@ func newPlayerCommand(parent *ff.FlagSet, data *string) *ff.Command {
 	player.Subcommands = []*ff.Command{
 		newPlayerCreateCommand(playerFlags, data),
 		newPlayerListCommand(playerFlags, data),
+		newPlayerReactivateCommand(playerFlags, data),
+		newPlayerRemoveCommand(playerFlags, data),
 		newPlayerResetPasswordCommand(playerFlags, data),
 		newPlayerShowCommand(playerFlags, data),
 	}
@@ -305,6 +309,7 @@ func createPlayer(data, email, handle, province string) error {
 // in a game.
 func newPlayerListCommand(parent *ff.FlagSet, data *string) *ff.Command {
 	fs := ff.NewFlagSet("list").SetParent(parent)
+	all := fs.BoolLong("all", "include removed (inactive) players")
 
 	return &ff.Command{
 		Name:      "list",
@@ -318,14 +323,15 @@ func newPlayerListCommand(parent *ff.FlagSet, data *string) *ff.Command {
 			if *data == "" {
 				return fmt.Errorf("--data is required")
 			}
-			return listPlayers(*data)
+			return listPlayers(*data, *all)
 		},
 	}
 }
 
-// listPlayers prints a table of the game's players (id, handle, email, and
-// starting province). Passwords are shown only by "player show".
-func listPlayers(data string) error {
+// listPlayers prints a table of the game's players (id, handle, email, starting
+// province, and status). By default only active players are listed; passing all
+// includes removed (inactive) players. Passwords are shown only by "player show".
+func listPlayers(data string, all bool) error {
 	game, files, err := loadGame(data)
 	if err != nil {
 		return err
@@ -341,11 +347,34 @@ func listPlayers(data string) error {
 	}
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "ID\tHANDLE\tEMAIL\tSTARTING PROVINCE")
+	fmt.Fprintln(w, "ID\tHANDLE\tEMAIL\tSTARTING PROVINCE\tSTATUS")
+	shown, hidden := 0, 0
 	for _, p := range store.Players {
-		fmt.Fprintf(w, "%d\t%s\t%s\t%s\n", p.ID, p.Handle, p.Email, p.StartingProvince)
+		if !all && !p.Active() {
+			hidden++
+			continue
+		}
+		fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s\n", p.ID, p.Handle, p.Email, p.StartingProvince, playerStatus(p))
+		shown++
 	}
-	return w.Flush()
+	if err := w.Flush(); err != nil {
+		return err
+	}
+	if shown == 0 {
+		fmt.Printf("game %q has no active players\n", game.ID)
+	}
+	if hidden > 0 {
+		fmt.Printf("(%d inactive player(s) hidden; pass --all to include them)\n", hidden)
+	}
+	return nil
+}
+
+// playerStatus renders a player's active state for display.
+func playerStatus(p tpty.Player) string {
+	if p.Active() {
+		return "active"
+	}
+	return "inactive"
 }
 
 // newPlayerResetPasswordCommand builds the "player reset-password" command, which
@@ -466,6 +495,122 @@ func showPlayer(data string, id int, handle string) error {
 	fmt.Printf("  email:    %s\n", player.Email)
 	fmt.Printf("  province: %s\n", player.StartingProvince)
 	fmt.Printf("  password: %s\n", player.Password)
+	fmt.Printf("  status:   %s\n", playerStatus(player))
+	return nil
+}
+
+// newPlayerRemoveCommand builds the "player remove" command, which removes a
+// player by marking them inactive. The player is retained and can be restored
+// with "player reactivate". The player is looked up by id or handle.
+//
+// See the reference documentation at content/docs/reference/players.md.
+func newPlayerRemoveCommand(parent *ff.FlagSet, data *string) *ff.Command {
+	fs := ff.NewFlagSet("remove").SetParent(parent)
+	id := fs.IntLong("id", 0, "the player's `id`")
+	handle := fs.StringLong("handle", "", "the player's `handle`")
+
+	return &ff.Command{
+		Name:      "remove",
+		Usage:     "tpty player remove [FLAGS]",
+		ShortHelp: "remove (deactivate) a player",
+		Flags:     fs,
+		Exec: func(ctx context.Context, args []string) error {
+			if len(args) > 0 {
+				return fmt.Errorf("unexpected argument %q: this command takes flags only, no positional arguments", args[0])
+			}
+			if *data == "" {
+				return fmt.Errorf("--data is required")
+			}
+			switch {
+			case *id != 0 && *handle != "":
+				return fmt.Errorf("provide only one of --id or --handle")
+			case *id == 0 && *handle == "":
+				return fmt.Errorf("provide --id or --handle")
+			}
+			return setPlayerActive(*data, *id, *handle, false)
+		},
+	}
+}
+
+// newPlayerReactivateCommand builds the "player reactivate" command, which
+// restores a removed (inactive) player by marking them active again. The player
+// is looked up by id or handle.
+//
+// See the reference documentation at content/docs/reference/players.md.
+func newPlayerReactivateCommand(parent *ff.FlagSet, data *string) *ff.Command {
+	fs := ff.NewFlagSet("reactivate").SetParent(parent)
+	id := fs.IntLong("id", 0, "the player's `id`")
+	handle := fs.StringLong("handle", "", "the player's `handle`")
+
+	return &ff.Command{
+		Name:      "reactivate",
+		Usage:     "tpty player reactivate [FLAGS]",
+		ShortHelp: "reactivate a removed player",
+		Flags:     fs,
+		Exec: func(ctx context.Context, args []string) error {
+			if len(args) > 0 {
+				return fmt.Errorf("unexpected argument %q: this command takes flags only, no positional arguments", args[0])
+			}
+			if *data == "" {
+				return fmt.Errorf("--data is required")
+			}
+			switch {
+			case *id != 0 && *handle != "":
+				return fmt.Errorf("provide only one of --id or --handle")
+			case *id == 0 && *handle == "":
+				return fmt.Errorf("provide --id or --handle")
+			}
+			return setPlayerActive(*data, *id, *handle, true)
+		},
+	}
+}
+
+// setPlayerActive removes (active == false) or reactivates (active == true) the
+// player identified by id (when id != 0) or by handle, writes the updated
+// players file, and reports the change. Looking the player up by id or handle
+// resolves it to its id before the state change, so both commands share one path.
+func setPlayerActive(data string, id int, handle string, active bool) error {
+	game, files, err := loadGame(data)
+	if err != nil {
+		return err
+	}
+	store, err := loadPlayers(files.Players)
+	if err != nil {
+		return err
+	}
+
+	var player tpty.Player
+	var ok bool
+	if id != 0 {
+		if player, ok = store.ByID(id); !ok {
+			return fmt.Errorf("no player with id %d", id)
+		}
+	} else {
+		if player, ok = store.ByHandle(handle); !ok {
+			return fmt.Errorf("no player with handle %q", handle)
+		}
+	}
+
+	verb := "removed"
+	if active {
+		player, err = store.Reactivate(player.ID)
+		verb = "reactivated"
+	} else {
+		player, err = store.Deactivate(player.ID)
+	}
+	if err != nil {
+		return err
+	}
+
+	if err := writeJSON(files.Players, store); err != nil {
+		return fmt.Errorf("write players: %w", err)
+	}
+
+	fmt.Printf("%s player %d in game %q\n", verb, player.ID, game.ID)
+	fmt.Printf("  handle:   %s\n", player.Handle)
+	fmt.Printf("  email:    %s\n", player.Email)
+	fmt.Printf("  status:   %s\n", playerStatus(player))
+	fmt.Printf("wrote %s\n", files.Players)
 	return nil
 }
 

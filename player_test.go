@@ -343,6 +343,114 @@ func TestResetPasswordIsJSONSafe(t *testing.T) {
 	}
 }
 
+// TestPlayerCreatedActive confirms a newly created player is active and its
+// zero-value Inactive flag is omitted from JSON.
+func TestPlayerCreatedActive(t *testing.T) {
+	s := NewPlayerStore()
+	p, err := s.Create(testSeeds, "a@x.com", "alice", "(0,0)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !p.Active() {
+		t.Error("a newly created player should be active")
+	}
+	buf, err := json.Marshal(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(buf), "inactive") {
+		t.Errorf("active player JSON should omit the inactive key: %s", buf)
+	}
+}
+
+// TestPlayerDeactivateReactivate confirms removing a player marks it inactive
+// without dropping the record, and reactivating restores it.
+func TestPlayerDeactivateReactivate(t *testing.T) {
+	s := newTestStore(t) // player 1 is "alice"
+
+	removed, err := s.Deactivate(1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if removed.Active() {
+		t.Error("player should be inactive after Deactivate")
+	}
+	// The record is retained, not dropped.
+	if got, ok := s.ByID(1); !ok || got.Active() {
+		t.Errorf("removed player must remain in the store, inactive: got %+v, ok=%v", got, ok)
+	}
+	if len(s.Players) != 1 {
+		t.Errorf("Deactivate must not drop the record: len = %d, want 1", len(s.Players))
+	}
+
+	back, err := s.Reactivate(1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !back.Active() {
+		t.Error("player should be active after Reactivate")
+	}
+	if got, _ := s.ByID(1); !got.Active() {
+		t.Error("stored player should be active after Reactivate")
+	}
+}
+
+// TestPlayerDeactivateErrors confirms the guard-rail errors: an unknown id and a
+// double-deactivate.
+func TestPlayerDeactivateErrors(t *testing.T) {
+	s := newTestStore(t)
+	if _, err := s.Deactivate(999); !errors.Is(err, ErrUnknownPlayer) {
+		t.Errorf("Deactivate(unknown): err = %v, want ErrUnknownPlayer", err)
+	}
+	if _, err := s.Deactivate(1); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Deactivate(1); !errors.Is(err, ErrAlreadyInactive) {
+		t.Errorf("Deactivate(already inactive): err = %v, want ErrAlreadyInactive", err)
+	}
+}
+
+// TestPlayerReactivateErrors confirms the guard-rail errors: an unknown id and
+// reactivating an already-active player.
+func TestPlayerReactivateErrors(t *testing.T) {
+	s := newTestStore(t)
+	if _, err := s.Reactivate(999); !errors.Is(err, ErrUnknownPlayer) {
+		t.Errorf("Reactivate(unknown): err = %v, want ErrUnknownPlayer", err)
+	}
+	if _, err := s.Reactivate(1); !errors.Is(err, ErrAlreadyActive) {
+		t.Errorf("Reactivate(already active): err = %v, want ErrAlreadyActive", err)
+	}
+}
+
+// TestInactivePlayerStillHoldsEmailAndHandle confirms uniqueness spans inactive
+// players: a removed player still occupies its email and handle, so neither can
+// be reused.
+func TestInactivePlayerStillHoldsEmailAndHandle(t *testing.T) {
+	s := newTestStore(t) // alice@example.com / "alice"
+	if _, err := s.Deactivate(1); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Create(testSeeds, "alice@example.com", "someoneelse", "(0,0)"); !errors.Is(err, ErrDuplicateEmail) {
+		t.Errorf("reusing an inactive player's email: err = %v, want ErrDuplicateEmail", err)
+	}
+	if _, err := s.Create(testSeeds, "new@example.com", "alice", "(0,0)"); !errors.Is(err, ErrDuplicateHandle) {
+		t.Errorf("reusing an inactive player's handle: err = %v, want ErrDuplicateHandle", err)
+	}
+}
+
+// TestPlayerJSONBackCompatDefaultsActive confirms a players.json written before
+// the inactive field existed (no "inactive" key) reads as active.
+func TestPlayerJSONBackCompatDefaultsActive(t *testing.T) {
+	const legacy = `{"id":1,"handle":"alice","email":"a@x.com","starting_province":"(0,0)","password":"x","seeds":{"seed1":1,"seed2":2}}`
+	var p Player
+	if err := json.Unmarshal([]byte(legacy), &p); err != nil {
+		t.Fatal(err)
+	}
+	if !p.Active() {
+		t.Error("a player record with no inactive key should read as active")
+	}
+}
+
 func TestParseProvince(t *testing.T) {
 	for _, s := range []string{"(0,0)", "(-1,0)", "(2,-3)"} {
 		got, err := ParseProvince(s)

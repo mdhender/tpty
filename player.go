@@ -20,6 +20,12 @@ import (
 // master seeds and the handle. Password is a shared secret used to authenticate
 // the player's orders; it is stored in plain text.
 //
+// Inactive records whether the player has been removed. Players are never
+// physically deleted; removing a player sets Inactive, and reactivating clears
+// it. The zero value is active, so a newly created player and any player record
+// written before this field existed both read as active. Use the Active
+// accessor rather than testing Inactive directly.
+//
 // See content/docs/reference/players.md for the rules.
 type Player struct {
 	ID               int    `json:"id"`
@@ -28,6 +34,14 @@ type Player struct {
 	StartingProvince string `json:"starting_province"`
 	Password         string `json:"password"`
 	Seeds            Seeds  `json:"seeds"`
+	Inactive         bool   `json:"inactive,omitempty"`
+}
+
+// Active reports whether the player is active — that is, not removed. It is the
+// negation of the stored Inactive flag, provided so engine code reads in terms
+// of the domain's "active" state instead of a double negative.
+func (p Player) Active() bool {
+	return !p.Inactive
 }
 
 // Errors returned when creating or validating a player.
@@ -38,6 +52,9 @@ const (
 	ErrDuplicateEmail  = cerrs.Error("duplicate email")
 	ErrDuplicateHandle = cerrs.Error("duplicate handle")
 	ErrUnknownEmail    = cerrs.Error("unknown email")
+	ErrUnknownPlayer   = cerrs.Error("unknown player")
+	ErrAlreadyInactive = cerrs.Error("player is already inactive")
+	ErrAlreadyActive   = cerrs.Error("player is already active")
 )
 
 // passwordWordCount is the number of words in a generated password. The phrases

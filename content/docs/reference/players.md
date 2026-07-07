@@ -41,10 +41,31 @@ Every player has three identifying fields: an id, an email, and a handle.
 - Fixed for the life of the game: a handle cannot be changed once the player is
   created (see [Randomness](#randomness)).
 
+## Active state
+
+Every player is either **active** or **inactive**. A player is active when
+created.
+
+Players are never physically deleted. **Removing** a player marks them inactive;
+the record — including its id, email, and handle — is retained in full.
+**Reactivating** an inactive player marks them active again. A player may move
+between the two states any number of times.
+
+Because the record is retained:
+
+- The player's id is never freed or reused, matching the id rule above. A removed
+  player's id stays assigned to that player.
+- The player continues to occupy its email and handle. Neither can be taken by a
+  new or existing player while the inactive record holds it — uniqueness is
+  enforced across active and inactive players alike (see
+  [Uniqueness and scope](#uniqueness-and-scope)).
+
 ## Uniqueness and scope
 
 Within a single game, each of `id`, `email`, and `handle` is unique. Email
 uniqueness is checked after lowercasing; handle uniqueness is checked exactly.
+Uniqueness spans every player in the game, active or inactive: an inactive
+player still holds its email and handle, so neither can be reused.
 
 Players in different games are independent. The same email or handle may appear
 in more than one game, and ids restart at `1` for each game.

@@ -95,6 +95,41 @@ func (s *PlayerStore) ResetPassword(email string, turn int) (Player, error) {
 	return Player{}, fmt.Errorf("%q: %w", email, ErrUnknownEmail)
 }
 
+// Deactivate marks the player with the given id inactive ("removes" it) and
+// returns the updated player. The record is retained in full — only the active
+// state changes — so the id, email, and handle stay assigned and cannot be
+// reused. An id that matches no player is rejected with ErrUnknownPlayer; a
+// player that is already inactive is rejected with ErrAlreadyInactive.
+func (s *PlayerStore) Deactivate(id int) (Player, error) {
+	for i := range s.Players {
+		if s.Players[i].ID == id {
+			if s.Players[i].Inactive {
+				return Player{}, fmt.Errorf("player %d: %w", id, ErrAlreadyInactive)
+			}
+			s.Players[i].Inactive = true
+			return s.Players[i], nil
+		}
+	}
+	return Player{}, fmt.Errorf("player %d: %w", id, ErrUnknownPlayer)
+}
+
+// Reactivate marks the inactive player with the given id active again and
+// returns the updated player. An id that matches no player is rejected with
+// ErrUnknownPlayer; a player that is already active is rejected with
+// ErrAlreadyActive.
+func (s *PlayerStore) Reactivate(id int) (Player, error) {
+	for i := range s.Players {
+		if s.Players[i].ID == id {
+			if !s.Players[i].Inactive {
+				return Player{}, fmt.Errorf("player %d: %w", id, ErrAlreadyActive)
+			}
+			s.Players[i].Inactive = false
+			return s.Players[i], nil
+		}
+	}
+	return Player{}, fmt.Errorf("player %d: %w", id, ErrUnknownPlayer)
+}
+
 // ByID returns the player with the given id, if any.
 func (s *PlayerStore) ByID(id int) (Player, bool) {
 	for _, p := range s.Players {
