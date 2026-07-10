@@ -15,7 +15,7 @@ import (
 	"text/tabwriter"
 
 	"github.com/mdhender/tpty"
-	"github.com/mdhender/tpty/dotenv"
+	"github.com/mdhender/tpty/internal/dotenv"
 	"github.com/mdhender/tpty/internal/prng"
 	"github.com/mdhender/tpty/worldographer"
 	"github.com/peterbourgon/ff/v4"

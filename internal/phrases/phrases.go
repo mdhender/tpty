@@ -112,7 +112,7 @@ var words = []string{
 	"talon", "tamer", "tank", "taper", "taps", "tarot", "tart", "task", "taste", "tasty", "taunt", "thank", "thaw", "theft", "theme",
 	"thigh", "thing", "think", "thong", "thorn", "those", "throb", "thud", "thumb", "thump", "thus", "tiara", "tidal", "tidy", "tiger",
 	"tile", "tilt", "tint", "tiny", "trace", "track", "trade", "train", "trait", "trap", "trash", "tray", "treat", "tree", "trek",
-	"trend", "trial", "tribe", "trick", "trio", "trout", "truce", "truck", "trump", "trunk", "try", "tug", "tulip", "tummy", "turf",
+	"trend", "trial", "tribe", "trick", "trio", "trout", "truce", "truck", "trunk", "trust", "try", "tug", "tulip", "tummy", "turf",
 	"tusk", "tutor", "tutu", "tux", "tweak", "tweet", "twice", "twine", "twins", "twirl", "twist", "uncle", "uncut", "undo", "unify",
 	"union", "unit", "untie", "upon", "upper", "urban", "used", "user", "usher", "utter", "value", "vapor", "vegan", "venue", "verse",
 	"vest", "veto", "vice", "video", "view", "viral", "virus", "visa", "visor", "vixen", "vocal", "voice", "void", "volt", "voter",
