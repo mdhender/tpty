@@ -8,15 +8,6 @@ enableGitInfo: true
 module:
   imports:
     - path: github.com/imfing/hextra
-  # Override Hugo's default "data" mount so it does NOT scan the project-root
-  # data/ directory, which holds the game engine's data (world.json, world.wxx,
-  # ...), not Hugo data files. Without this, Hugo tries to unmarshal
-  # data/**/*.wxx and the build fails. We point the data mount at an empty,
-  # tracked directory instead. All other default mounts (content, static, ...)
-  # and Hextra's own icon data are unaffected.
-  mounts:
-    - source: hugo-data
-      target: data
 
 markup:
   goldmark:
