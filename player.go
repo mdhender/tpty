@@ -10,8 +10,8 @@ import (
 	"strings"
 
 	"github.com/mdhender/tpty/internal/cerrs"
+	"github.com/mdhender/tpty/internal/phrases"
 	"github.com/mdhender/tpty/internal/prng"
-	"github.com/mdhender/tpty/phrases"
 )
 
 // Player is a person participating in a game. Players are scoped to a game: a
