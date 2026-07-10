@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/mdhender/tpty/cerrs"
+	"github.com/mdhender/tpty/internal/cerrs"
 )
 
 // Errors returned when managing a game's allowed starting provinces.

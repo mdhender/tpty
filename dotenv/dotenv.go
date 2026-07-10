@@ -8,7 +8,7 @@ import (
 	"os"
 
 	"github.com/joho/godotenv"
-	"github.com/mdhender/tpty/cerrs"
+	"github.com/mdhender/tpty/internal/cerrs"
 )
 
 const (

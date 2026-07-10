@@ -6,7 +6,8 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/mdhender/tpty/cerrs"
+	"github.com/mdhender/tpty/internal/cerrs"
+	"github.com/mdhender/tpty/internal/prng"
 )
 
 // Game is the top-level unit of play. The world and the players belong to it. A
@@ -18,10 +19,10 @@ import (
 //
 // See content/docs/reference/games.md for the rules.
 type Game struct {
-	ID    string    `json:"id"`
-	Seeds Seeds     `json:"seeds"`
-	Turn  int       `json:"turn"`
-	Files GameFiles `json:"files"`
+	ID    string     `json:"id"`
+	Seeds prng.Seeds `json:"seeds"`
+	Turn  int        `json:"turn"`
+	Files GameFiles  `json:"files"`
 }
 
 // GameFiles maps each of a game's data files to a path. Paths are resolved
@@ -51,7 +52,7 @@ func DefaultGameFiles() GameFiles {
 
 // NewGame returns a game with the given id and seeds and the default file
 // layout. The id must be valid (see ValidateGameID).
-func NewGame(id string, seeds Seeds) (*Game, error) {
+func NewGame(id string, seeds prng.Seeds) (*Game, error) {
 	if err := ValidateGameID(id); err != nil {
 		return nil, err
 	}

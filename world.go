@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/rand/v2"
+
+	"github.com/mdhender/tpty/internal/prng"
 )
 
 // Terrain is the kind of land assigned to a province.
@@ -77,7 +79,7 @@ type Province struct {
 
 // World is a generated world.
 type World struct {
-	Seeds     Seeds      `json:"seeds"`
+	Seeds     prng.Seeds `json:"seeds"`
 	Rings     int        `json:"rings"`
 	Provinces []Province `json:"provinces"`
 }
@@ -89,12 +91,12 @@ type World struct {
 // terrain draws come from the world's seeds rather than the game's directly.
 //
 // See content/docs/reference/world-generation.md for the rules.
-func GenerateWorld(gameSeeds Seeds, rings int) (*World, error) {
+func GenerateWorld(gameSeeds prng.Seeds, rings int) (*World, error) {
 	if rings <= 0 || rings >= 100 {
 		return nil, fmt.Errorf("rings must be > 0 and < 100, got %d", rings)
 	}
 
-	worldSeeds := gameSeeds.Derive(KeyWorldSeeds)
+	worldSeeds := gameSeeds.Derive(prng.TagWorldSeeds)
 	w := &World{
 		Seeds:     worldSeeds,
 		Rings:     rings,
@@ -108,7 +110,7 @@ func GenerateWorld(gameSeeds Seeds, rings int) (*World, error) {
 	// its own coordinates, so the result is independent of iteration order.
 	for k := 1; k <= rings; k++ {
 		for _, h := range Ring(k) {
-			stream := worldSeeds.Stream(KeyTerrain, Key(h.Q), Key(h.R))
+			stream := rand.New(worldSeeds.Stream(prng.TagTerrain, prng.Key(h.Q), prng.Key(h.R)))
 			w.Provinces = append(w.Provinces, Province{Q: h.Q, R: h.R, Terrain: rollTerrain(stream)})
 		}
 	}

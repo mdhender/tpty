@@ -5,10 +5,12 @@ package tpty
 import (
 	"fmt"
 	"hash/fnv"
+	"math/rand/v2"
 	"regexp"
 	"strings"
 
-	"github.com/mdhender/tpty/cerrs"
+	"github.com/mdhender/tpty/internal/cerrs"
+	"github.com/mdhender/tpty/internal/prng"
 	"github.com/mdhender/tpty/phrases"
 )
 
@@ -28,13 +30,13 @@ import (
 //
 // See content/docs/reference/players.md for the rules.
 type Player struct {
-	ID               int    `json:"id"`
-	Handle           string `json:"handle"`
-	Email            string `json:"email"`
-	StartingProvince string `json:"starting_province"`
-	Password         string `json:"password"`
-	Seeds            Seeds  `json:"seeds"`
-	Inactive         bool   `json:"inactive,omitempty"`
+	ID               int        `json:"id"`
+	Handle           string     `json:"handle"`
+	Email            string     `json:"email"`
+	StartingProvince string     `json:"starting_province"`
+	Password         string     `json:"password"`
+	Seeds            prng.Seeds `json:"seeds"`
+	Inactive         bool       `json:"inactive,omitempty"`
 }
 
 // Active reports whether the player is active — that is, not removed. It is the
@@ -123,8 +125,8 @@ func canonicalProvince(s string) (Hex, error) {
 //
 // The derivation is a frozen compatibility surface (see CLAUDE.md): the key path
 // and the handle hash must not change once games exist.
-func playerSeeds(gameSeeds Seeds, handle string) Seeds {
-	return gameSeeds.Derive(KeyPlayerSeeds, Key(hashHandle(handle)))
+func playerSeeds(gameSeeds prng.Seeds, handle string) prng.Seeds {
+	return gameSeeds.Derive(prng.TagPlayerSeeds, prng.Key(hashHandle(handle)))
 }
 
 // hashHandle reduces a handle to a stream key using the 64-bit FNV-1a hash. The
@@ -138,18 +140,18 @@ func hashHandle(handle string) int64 {
 // generatePassword generates a player's password from the player's own seeds,
 // keyed by the starting province. The result is words joined by periods, so it
 // needs no JSON escaping and contains no spaces.
-func generatePassword(seeds Seeds, province Hex) string {
-	s := seeds.Stream(KeyPlayerSecret, Key(province.Q), Key(province.R))
+func generatePassword(seeds prng.Seeds, province Hex) string {
+	s := rand.New(seeds.Stream(prng.TagPlayerSecret, prng.Key(province.Q), prng.Key(province.R)))
 	return phrases.Generate(s, passwordWordCount)
 }
 
 // generateResetPassword generates a player's reset password from the player's
-// own seeds, keyed by the current turn. It draws from the KeyPlayerPasswordReset
-// domain — distinct from the KeyPlayerSecret domain used by generatePassword —
+// own seeds, keyed by the current turn. It draws from the TagPlayerPasswordReset
+// domain — distinct from the TagPlayerSecret domain used by generatePassword —
 // so a reset value always differs from the creation password, and the turn
 // differentiates successive resets. Like a creation password, the result is
 // words joined by periods, so it needs no JSON escaping and contains no spaces.
-func generateResetPassword(seeds Seeds, turn int) string {
-	s := seeds.Stream(KeyPlayerPasswordReset, Key(turn))
+func generateResetPassword(seeds prng.Seeds, turn int) string {
+	s := rand.New(seeds.Stream(prng.TagPlayerPasswordReset, prng.Key(turn)))
 	return phrases.Generate(s, passwordWordCount)
 }

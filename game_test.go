@@ -7,6 +7,8 @@ import (
 	"errors"
 	"path/filepath"
 	"testing"
+
+	"github.com/mdhender/tpty/internal/prng"
 )
 
 func TestValidateGameID(t *testing.T) {
@@ -25,10 +27,10 @@ func TestValidateGameID(t *testing.T) {
 }
 
 func TestNewGameValidatesID(t *testing.T) {
-	if _, err := NewGame("bad id", Seeds{Seed1: 1, Seed2: 2}); !errors.Is(err, ErrInvalidGameID) {
+	if _, err := NewGame("bad id", prng.Seeds{Seed1: 1, Seed2: 2}); !errors.Is(err, ErrInvalidGameID) {
 		t.Errorf("NewGame with bad id: err = %v, want ErrInvalidGameID", err)
 	}
-	g, err := NewGame("ok", Seeds{Seed1: 1, Seed2: 2})
+	g, err := NewGame("ok", prng.Seeds{Seed1: 1, Seed2: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -38,7 +40,7 @@ func TestNewGameValidatesID(t *testing.T) {
 }
 
 func TestGameJSONRoundTrip(t *testing.T) {
-	g, err := NewGame("smoke-test-1", Seeds{Seed1: 12345, Seed2: 67890})
+	g, err := NewGame("smoke-test-1", prng.Seeds{Seed1: 12345, Seed2: 67890})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +67,7 @@ func TestGameJSONRoundTrip(t *testing.T) {
 // TestNewGameStartsAtTurnZero confirms a new game begins at turn 0 (setup — no
 // turn), the zero value.
 func TestNewGameStartsAtTurnZero(t *testing.T) {
-	g, err := NewGame("ok", Seeds{Seed1: 1, Seed2: 2})
+	g, err := NewGame("ok", prng.Seeds{Seed1: 1, Seed2: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,7 +79,7 @@ func TestNewGameStartsAtTurnZero(t *testing.T) {
 // TestGameTurnRoundTrips confirms a non-zero turn survives a JSON round-trip and
 // is written under the "turn" key.
 func TestGameTurnRoundTrips(t *testing.T) {
-	g, err := NewGame("smoke-test-1", Seeds{Seed1: 1, Seed2: 2})
+	g, err := NewGame("smoke-test-1", prng.Seeds{Seed1: 1, Seed2: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,7 +129,7 @@ func TestGameFilesResolve(t *testing.T) {
 // TestWorldSeedsAreDerived confirms the world derives its own master seeds from
 // the game's (they are not the game seeds), deterministically.
 func TestWorldSeedsAreDerived(t *testing.T) {
-	game := Seeds{Seed1: 7, Seed2: 13}
+	game := prng.Seeds{Seed1: 7, Seed2: 13}
 	w, err := GenerateWorld(game, 3)
 	if err != nil {
 		t.Fatal(err)
@@ -135,7 +137,7 @@ func TestWorldSeedsAreDerived(t *testing.T) {
 	if w.Seeds == game {
 		t.Error("world seeds equal the game seeds; expected a derived pair")
 	}
-	if want := game.Derive(KeyWorldSeeds); w.Seeds != want {
+	if want := game.Derive(prng.TagWorldSeeds); w.Seeds != want {
 		t.Errorf("world seeds = %+v, want derived %+v", w.Seeds, want)
 	}
 }

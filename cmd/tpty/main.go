@@ -16,6 +16,7 @@ import (
 
 	"github.com/mdhender/tpty"
 	"github.com/mdhender/tpty/dotenv"
+	"github.com/mdhender/tpty/internal/prng"
 	"github.com/mdhender/tpty/worldographer"
 	"github.com/peterbourgon/ff/v4"
 	"github.com/peterbourgon/ff/v4/ffhelp"
@@ -167,14 +168,14 @@ func newGameCreateCommand(parent *ff.FlagSet, data *string) *ff.Command {
 				}
 			}
 
-			return createGame(*data, *id, tpty.Seeds{Seed1: s1, Seed2: s2})
+			return createGame(*data, *id, prng.New(s1, s2))
 		},
 	}
 }
 
 // createGame writes a new game.json manifest into the data directory. It refuses
 // to overwrite an existing game.
-func createGame(data, id string, seeds tpty.Seeds) error {
+func createGame(data, id string, seeds prng.Seeds) error {
 	path := filepath.Join(data, "game.json")
 	if _, err := os.Stat(path); err == nil {
 		return fmt.Errorf("%s already exists", path)

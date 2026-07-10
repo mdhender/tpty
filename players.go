@@ -2,7 +2,11 @@
 
 package tpty
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/mdhender/tpty/internal/prng"
+)
 
 // PlayerStore holds the players of a single game. Ids are assigned sequentially
 // in increasing order and are never reused within a game, so NextID is persisted
@@ -31,7 +35,7 @@ func NewPlayerStore() *PlayerStore {
 // Create does not check the starting province against the game's allowed
 // starting provinces; that is the caller's responsibility, since the allowed set
 // lives in starting-provinces.json alongside the store.
-func (s *PlayerStore) Create(master Seeds, email, handle, startingProvince string) (Player, error) {
+func (s *PlayerStore) Create(master prng.Seeds, email, handle, startingProvince string) (Player, error) {
 	email = normalizeEmail(email)
 	if email == "" {
 		return Player{}, fmt.Errorf("email is required: %w", ErrInvalidEmail)

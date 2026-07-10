@@ -67,17 +67,22 @@ This is a counter-based / spawn-keyed PRNG. See the
 explanation for the why; the reference for what it is; the rules below are the
 constraints agents must hold to.
 
-- A game records two `uint64` master seeds, `seed1` and `seed2` (`tpty.Seeds`).
+- A game records two `uint64` master seeds, `seed1` and `seed2` (`prng.Seeds`).
+  The whole mechanism lives in the `github.com/mdhender/tpty/internal/prng`
+  package.
 - A stream is addressed by a **key path**: `Seeds.Stream(path ...Key)` (see
-  `streams.go`), where `type Key int64`. It hashes the master seeds with the key
-  path via SHA-256 and seeds a PCG source (`math/rand/v2`) with the digest.
+  `internal/prng/prng.go`), where `type Key int64`. It hashes the master seeds
+  with the key path via SHA-256 and seeds a PCG source (`math/rand/v2`) with the
+  digest. `Stream` returns a `*prng.Stream` (a `math/rand/v2.Source`); wrap it in
+  `rand.New(...)` for the full `*rand.Rand` API.
 - The first element of a key path is a **domain tag** — a named constant naming
-  the stream's purpose. The remaining elements identify the specific instance;
-  coerce identifiers (coordinates, ids) to `Key`. For example:
+  the stream's purpose, defined in `internal/prng/tags.go`. The remaining
+  elements identify the specific instance; coerce identifiers (coordinates, ids)
+  to `Key`. For example:
 
   ```go
-  const KeyTerrain Key = iota + 1 // domain tags: one enumerated block
-  stream := seeds.Stream(KeyTerrain, Key(h.Q), Key(h.R))
+  const TagTerrain Key = iota + 1 // domain tags: one enumerated block
+  stream := rand.New(seeds.Stream(TagTerrain, Key(h.Q), Key(h.R)))
   ```
 
 - **Keep every domain tag in one enumerated block, starting at 1** (reserve 0 as

@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/mdhender/tpty"
+	"github.com/mdhender/tpty/internal/prng"
 )
 
 // TestLoadStartingProvincesMissingFile verifies that an absent file yields an
@@ -98,7 +99,7 @@ func writeTempFile(t *testing.T, content string) string {
 func setupGameDir(t *testing.T, rings int) string {
 	t.Helper()
 	dir := t.TempDir()
-	game, err := tpty.NewGame("test-game", tpty.Seeds{Seed1: 1, Seed2: 2})
+	game, err := tpty.NewGame("test-game", prng.Seeds{Seed1: 1, Seed2: 2})
 	if err != nil {
 		t.Fatalf("NewGame: %v", err)
 	}

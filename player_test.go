@@ -7,10 +7,12 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"github.com/mdhender/tpty/internal/prng"
 )
 
 // testSeeds are fixed master seeds for player tests.
-var testSeeds = Seeds{Seed1: 1, Seed2: 2}
+var testSeeds = prng.Seeds{Seed1: 1, Seed2: 2}
 
 // newTestStore returns a store with one player already created, for tests that
 // exercise uniqueness and id assignment.
@@ -163,7 +165,7 @@ func TestPlayerCreateIsDeterministic(t *testing.T) {
 	if pa != pb {
 		t.Errorf("same seeds and inputs produced different players:\n a=%+v\n b=%+v", pa, pb)
 	}
-	if pa.Password == "" || pa.Seeds == (Seeds{}) {
+	if pa.Password == "" || pa.Seeds == (prng.Seeds{}) {
 		t.Errorf("expected a generated password and non-zero seeds, got %+v", pa)
 	}
 }
@@ -208,9 +210,9 @@ func TestPlayerSeedsDependOnHandle(t *testing.T) {
 // different player seeds for the same handle.
 func TestPlayerSeedsDependOnMaster(t *testing.T) {
 	a := NewPlayerStore()
-	pa, _ := a.Create(Seeds{Seed1: 1, Seed2: 2}, "a@x.com", "alice", "(0,0)")
+	pa, _ := a.Create(prng.Seeds{Seed1: 1, Seed2: 2}, "a@x.com", "alice", "(0,0)")
 	b := NewPlayerStore()
-	pb, _ := b.Create(Seeds{Seed1: 3, Seed2: 4}, "a@x.com", "alice", "(0,0)")
+	pb, _ := b.Create(prng.Seeds{Seed1: 3, Seed2: 4}, "a@x.com", "alice", "(0,0)")
 	if pa.Seeds == pb.Seeds {
 		t.Error("different master seeds derived identical player seeds")
 	}

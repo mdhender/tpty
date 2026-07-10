@@ -15,7 +15,7 @@ prior art, the trade-offs, and the reasoning — see
 ## Master seeds
 
 A game records two master seeds, `seed1` and `seed2`, both `uint64` (the type
-`tpty.Seeds`, with JSON fields `seed1` and `seed2`). Together they are the root of
+`prng.Seeds`, with JSON fields `seed1` and `seed2`). Together they are the root of
 the game's randomness. See [Games]({{< relref "/docs/reference/games.md" >}}).
 
 ## Streams
@@ -26,7 +26,7 @@ tag** naming the stream's purpose; the remaining elements identify the specific
 instance, with identifiers such as coordinates or ids coerced to `Key`.
 
 ```go
-stream := seeds.Stream(KeyTerrain, Key(q), Key(r))
+stream := seeds.Stream(TagTerrain, Key(q), Key(r))
 ```
 
 ## Stream derivation
@@ -60,11 +60,11 @@ enumerated block that starts at `1`; `0` is reserved as invalid. The block is
 
 | Domain tag               | Value | Instance keyed by                        |
 |--------------------------|------:|------------------------------------------|
-| `KeyTerrain`             |     1 | province coordinates `(q, r)`            |
-| `KeyPlayerSeeds`         |     2 | a hash of the player's handle            |
-| `KeyPlayerSecret`        |     3 | the starting province `(q, r)`           |
-| `KeyWorldSeeds`          |     4 | — (the world's seeds, from the game's)   |
-| `KeyPlayerPasswordReset` |     5 | the current turn                         |
+| `TagTerrain`             |     1 | province coordinates `(q, r)`            |
+| `TagPlayerSeeds`         |     2 | a hash of the player's handle            |
+| `TagPlayerSecret`        |     3 | the starting province `(q, r)`           |
+| `TagWorldSeeds`          |     4 | — (the world's seeds, from the game's)   |
+| `TagPlayerPasswordReset` |     5 | the current turn                         |
 
 ## Frozen surfaces
 

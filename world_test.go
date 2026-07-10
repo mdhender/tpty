@@ -5,18 +5,20 @@ package tpty
 import (
 	"reflect"
 	"testing"
+
+	"github.com/mdhender/tpty/internal/prng"
 )
 
 func TestGenerateWorldRejectsBadRings(t *testing.T) {
 	for _, rings := range []int{-1, 0, 100, 200} {
-		if _, err := GenerateWorld(Seeds{Seed1: 1, Seed2: 2}, rings); err == nil {
+		if _, err := GenerateWorld(prng.Seeds{Seed1: 1, Seed2: 2}, rings); err == nil {
 			t.Errorf("GenerateWorld(rings=%d) = nil error, want error", rings)
 		}
 	}
 }
 
 func TestGenerateWorldProvinceCount(t *testing.T) {
-	seeds := Seeds{Seed1: 1, Seed2: 2}
+	seeds := prng.Seeds{Seed1: 1, Seed2: 2}
 	for _, tc := range []struct{ rings, want int }{
 		{1, 7}, {2, 19}, {3, 37}, {5, 91},
 	} {
@@ -31,7 +33,7 @@ func TestGenerateWorldProvinceCount(t *testing.T) {
 }
 
 func TestGenerateWorldOriginIsMountain(t *testing.T) {
-	w, err := GenerateWorld(Seeds{Seed1: 42, Seed2: 99}, 4)
+	w, err := GenerateWorld(prng.Seeds{Seed1: 42, Seed2: 99}, 4)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,7 +53,7 @@ func TestGenerateWorldOriginIsMountain(t *testing.T) {
 }
 
 func TestGenerateWorldIsDeterministic(t *testing.T) {
-	seeds := Seeds{Seed1: 7, Seed2: 13}
+	seeds := prng.Seeds{Seed1: 7, Seed2: 13}
 	a, err := GenerateWorld(seeds, 6)
 	if err != nil {
 		t.Fatal(err)
@@ -66,8 +68,8 @@ func TestGenerateWorldIsDeterministic(t *testing.T) {
 }
 
 func TestDifferentSeedsDifferentWorlds(t *testing.T) {
-	a, _ := GenerateWorld(Seeds{Seed1: 1, Seed2: 2}, 6)
-	b, _ := GenerateWorld(Seeds{Seed1: 1, Seed2: 3}, 6)
+	a, _ := GenerateWorld(prng.Seeds{Seed1: 1, Seed2: 2}, 6)
+	b, _ := GenerateWorld(prng.Seeds{Seed1: 1, Seed2: 3}, 6)
 	if reflect.DeepEqual(a.Provinces, b.Provinces) {
 		t.Error("different seeds produced identical terrain")
 	}
@@ -100,8 +102,8 @@ func TestTerrainTranslationCoversEveryTerrain(t *testing.T) {
 func TestTerrainStreamIsPositionKeyed(t *testing.T) {
 	// A province's terrain depends only on the seeds and its coordinates, not on
 	// how many rings were generated around it.
-	small, _ := GenerateWorld(Seeds{Seed1: 5, Seed2: 8}, 3)
-	large, _ := GenerateWorld(Seeds{Seed1: 5, Seed2: 8}, 9)
+	small, _ := GenerateWorld(prng.Seeds{Seed1: 5, Seed2: 8}, 3)
+	large, _ := GenerateWorld(prng.Seeds{Seed1: 5, Seed2: 8}, 9)
 
 	terrainAt := func(w *World) map[Hex]Terrain {
 		m := make(map[Hex]Terrain, len(w.Provinces))
