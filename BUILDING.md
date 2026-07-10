@@ -30,16 +30,16 @@ optional; if omitted (or 0) they are chosen at random and reported so the world
 can be reproduced.
 
 ```sh
-go run ./cmd/tpty world generate --rings 5 --data data/alpha --seed1 7 --seed2 13
+go run ./cmd/tpty world generate --rings 5 --data games/alpha --seed1 7 --seed2 13
 ```
 
-## The `data/` directory
+## The `games/` directory
 
-`data/` holds generated engine data. Its contents are git-ignored (via
-`data/.gitignore`), and it is split by owner:
+`games/` holds generated engine data. Its contents are git-ignored (via
+`games/.gitignore`), and it is split by owner:
 
-- **`data/alpha/`** — for the maintainer's own testing.
-- **`data/claude/`** — owned by the coding agent (Claude). The agent may leave
+- **`games/alpha/`** — for the maintainer's own testing.
+- **`games/claude/`** — owned by the coding agent (Claude). The agent may leave
   artifacts here for review and clear it out as needed.
 
-Use `--data data/alpha` or `--data data/claude` accordingly.
+Use `--data games/alpha` or `--data games/claude` accordingly.
