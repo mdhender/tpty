@@ -35,6 +35,7 @@ type GameFiles struct {
 	Entities           string `json:"entities"`
 	Orders             string `json:"orders"`
 	Turns              string `json:"turns"`
+	Reports            string `json:"reports"`
 	StartingProvinces  string `json:"starting-provinces"`
 	TerrainTranslation string `json:"terrain-translation"`
 }
@@ -43,6 +44,11 @@ type GameFiles struct {
 // directory, used when a manifest omits the field (an older game.json predating
 // the turns directory resolves it to "").
 const defaultTurnsDir = "./turns"
+
+// defaultReportsDir is the fallback location of the per-turn report output
+// directory, used when a manifest omits the field (an older game.json predating
+// the reports directory resolves it to "").
+const defaultReportsDir = "./reports"
 
 // ErrInvalidGameID is returned when a game id is empty or contains a character
 // that is not allowed.
@@ -58,6 +64,7 @@ func DefaultGameFiles() GameFiles {
 		Entities:           "./entities.json",
 		Orders:             "./orders",
 		Turns:              defaultTurnsDir,
+		Reports:            defaultReportsDir,
 		StartingProvinces:  "./starting-provinces.json",
 		TerrainTranslation: "./terrain-translation.json",
 	}
@@ -105,6 +112,12 @@ func (f GameFiles) Resolve(baseDir string) GameFiles {
 	if turns == "" {
 		turns = defaultTurnsDir
 	}
+	// Likewise, a manifest predating the reports directory decodes "reports" to
+	// "", so fall back to the default so pre-existing manifests still resolve.
+	reports := f.Reports
+	if reports == "" {
+		reports = defaultReportsDir
+	}
 	return GameFiles{
 		World:              resolve(f.World),
 		Players:            resolve(f.Players),
@@ -112,6 +125,7 @@ func (f GameFiles) Resolve(baseDir string) GameFiles {
 		Entities:           resolve(f.Entities),
 		Orders:             resolve(f.Orders),
 		Turns:              resolve(turns),
+		Reports:            resolve(reports),
 		StartingProvinces:  resolve(f.StartingProvinces),
 		TerrainTranslation: resolve(f.TerrainTranslation),
 	}

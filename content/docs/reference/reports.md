@@ -46,6 +46,11 @@ of the turn it describes:
 Delivery is manual. The engine generates a report for each active player; the GM
 sends each player their own report. There is no automated mail delivery.
 
+The engine writes each report as a structured JSON file under the game's
+`reports` directory (see [Games]({{< relref "/docs/reference/games.md" >}})). A
+concrete human-readable presentation format is not yet part of the rules and is
+future work.
+
 ## See also
 
 - [Turns]({{< relref "/docs/reference/turns.md" >}})
