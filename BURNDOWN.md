@@ -51,12 +51,18 @@ Of the six MVP verbs, **create a game** and **add players** are done.
    more as later orders leave stub state). `players.md` already says the
    player's first entity is created when the game begins — pin that down (turn 1
    seeds each active player a faction + starting entity).
-3. **`reference/orders.md`.** The orders file: the authenticated opening record
-   (game id, player id, password), then per-entity blocks in the historical
-   shape (`Entity <id>, <name>` / `Orders: <n>` / one command per line). The
-   **full command grammar for all IDs 0–29** (args per command, from the Quick
-   Command Summary) — this is the parsing spec and covers every order. How auth
-   failures / malformed orders / commands on unowned entities are reported.
+3. **`reference/orders/` (landing page + per-command entries).** Too much for
+   one doc: the orders machinery is a *file format* plus ~28 discrete commands,
+   so the reference mirrors that (see #26). Write **`orders/_index.md`** now and
+   complete: the authenticated opening record (game id, player id, password),
+   the per-entity blocks in the historical shape (`Entity <id>, <name>` /
+   `Orders: <n>` / one command per line), and the **master command summary table
+   for all IDs 0–29** (args + time cost, grouped into ~6 families) — this table
+   is the parsing spec and covers every order. Plus how auth failures / malformed
+   orders / commands on unowned entities are reported. **Per-command entries
+   (`orders/<command>.md`, per-command granularity) land later**, one as each
+   order leaves stub state (item 15); a still-stubbed order needs no page — the
+   summary table covers it.
 4. **`reference/reports.md`.** A turn report: game state at the **start** of turn
    `N` (per `turns.md`), scoped to one player — their factions, their entities,
    and the province descriptions those entities see. The report format.
@@ -67,11 +73,12 @@ Of the six MVP verbs, **create a game** and **add players** are done.
    how processing draws randomness (PRNG stream keyed by turn + new domain tags)
    so results are deterministic.
 
-> Per-order references (and any subsystem references they pull in — skills,
-> things/inventory, stacks, combat) are written **as each order is implemented
-> for real** (item 13), not upfront. A stubbed order needs only its grammar in
-> `orders.md`; a real order needs its own reference plus whatever model it
-> touches. This keeps the subsystems off the critical path for the loop.
+> Per-command entries under `reference/orders/` (and any subsystem references
+> they pull in — skills, things/inventory, stacks, combat) are written **as each
+> order is implemented for real** (item 15), not upfront. A stubbed order needs
+> only its row in the `orders/_index.md` summary table; a real order needs its
+> own `orders/<command>.md` entry plus whatever model it touches. This keeps the
+> per-command detail and the subsystems off the critical path for the loop.
 
 ## Model layer: factions & entities
 
@@ -88,7 +95,7 @@ Of the six MVP verbs, **create a game** and **add players** are done.
 
 ## Accept orders (parse everything)
 
-10. **Orders parser + authentication** (implements `orders.md`). Parse the file,
+10. **Orders parser + authentication** (implements `orders/_index.md`). Parse the file,
     validate the opening record, authenticate against the player record (game id
     match, player id + password; reject inactive players), and parse per-entity
     command blocks for **all** commands, rejecting commands on entities the
@@ -110,9 +117,10 @@ Of the six MVP verbs, **create a game** and **add players** are done.
     with a **stub handler as the default** so an unimplemented order is a no-op
     (recorded, not an error).
 15. **Real command handlers, decided per order.** For each order we choose to
-    implement: write its reference (and any subsystem model it needs), then
-    replace its stub with the real handler. Deterministic. Track per-command;
-    the split of real-vs-stub is made here, order by order, as references land.
+    implement: write its `orders/<command>.md` entry (and any subsystem model it
+    needs), then replace its stub with the real handler. Deterministic. Track
+    per-command; the split of real-vs-stub is made here, order by order, as the
+    per-command references land.
 16. **`tpty turn process` command** — run the engine for the current turn;
     enforce the guards (orders collected, not already processed); write results.
 
