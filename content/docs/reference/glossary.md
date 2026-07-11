@@ -74,3 +74,8 @@ Definitions of terms used across the reference.
 **Turn**
 : The unit of play a game advances by. Turn `0` is setup (no turn); play begins
   at turn `1` and counts up. See [Turns]({{< relref "/docs/reference/turns.md" >}}).
+
+**Turn report**
+: What a player receives at the start of a turn, describing their factions and
+  entities at the start of that turn; the basis for the player's orders. See
+  [Reports]({{< relref "/docs/reference/reports.md" >}}).
