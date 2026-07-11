@@ -23,6 +23,20 @@ the file, followed by one **entity block** for each entity the player is issuing
 orders to. Records are separated by blank lines; leading and trailing whitespace
 on a line is not significant.
 
+### Text fields
+
+Some fields are **text**: the game id and password in the opening record, the
+entity name on a header line, and the names of formed units in a names section.
+
+A text field may be written with or without surrounding double quotes. Quotes
+are required only when the text contains a space (or another character that
+could be confused with a field separator); otherwise they are optional — the
+engine accepts `Conan` and `"Conan"` alike.
+
+The convention — and the form the engine uses when it generates a default order
+set for a player — is to **quote every text field**, even one with no spaces.
+The examples in this page follow that convention.
+
 ### Opening record
 
 The first non-blank line is the opening record. It has three fields, separated
@@ -41,51 +55,49 @@ For example:
 "smoke-test-1" 3 "k9m2qphtx7"
 ```
 
-The game id and password are quoted because they are quoted text: they contain
-no characters that require JSON escaping and none that could be confused with a
-space. The player id is a bare integer.
+The game id and password are text fields, shown quoted here per the convention
+above. Because they are quoted text they never contain a space, so their quotes
+are optional — but quoting them is recommended. The player id is a number, not a
+text field, so it is never quoted.
 
 ### Entity blocks
 
 Each entity block gives the orders for one entity. A block is:
 
-1. a **header line**, `Entity <id>, <name>`, naming the entity by its id and
-   its name;
-2. a **count line**, `Orders: <n>`, giving the number of order lines that
-   follow;
-3. exactly `<n>` **order lines**, one order each.
+1. a **header line**, `entity <id>, <name>`, naming the entity by its id and its
+   name;
+2. zero or more **order lines**, one order each.
 
 For example:
 
 ```
-Entity 101, Conan the Copyright
-Orders: 2
-drop  102
-move  1  2  3  2
+entity 101, "Conan the Copyright"
+    drop  102
+    move  1  2  3  2
 
-Entity 102, Sendya
-Orders: 1
-work  57  10
+entity 102, "Sendya"
+    work  57  10
 ```
 
-The name on the header line is informational; the entity is identified by its
-id. The count must equal the number of order lines in the block.
+The `entity` keyword is matched case-insensitively, and order lines are
+conventionally indented beneath the header as shown; the indentation is cosmetic
+and not significant to the parser. The name is a text field — quote it per the
+convention above — and is informational: the entity is identified by its id.
 
 ### Names section
 
 An entity block that forms new units (see the `Form` order) may end with a
-**names section**: the line `Names:` followed by one line per newly formed unit,
+**names section**: the line `names:` (matched case-insensitively) followed by one line per newly formed unit,
 each giving the forming entity's id and the name to give the unit it forms:
 
 ```
-Entity 204, King Loric the Dread
-Orders: 4
-study 39 14
-form  9 16 2000 2
-buy   40 40 1 1
-study 9 45
-Names:
-204 The Slaves of Darkness
+entity 204, "King Loric the Dread"
+    study 39 14
+    form  9 16 2000 2
+    buy   40 40 1 1
+    study 9 45
+names:
+    204 "The Slaves of Darkness"
 ```
 
 ## Order lines
@@ -134,8 +146,8 @@ An order given to an entity the player does not own is rejected.
 The engine reports what it could not accept rather than failing silently:
 
 - A malformed opening record, or one that fails authentication, rejects the file.
-- An unknown command word, a malformed order line, a count that does not match
-  the number of order lines, or an order given to an unowned entity is reported.
+- An unknown command word, a malformed order line, or an order given to an
+  unowned entity is reported.
 
 Every order in the file is parsed and validated regardless of whether the engine
 can yet execute it: an order that parses successfully is accepted even when its
