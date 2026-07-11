@@ -45,7 +45,9 @@ controller's id within that kind, so player ids and NPC ids cannot be confused.
   in the opening record (see [Orders]({{< relref "/docs/reference/orders" >}})).
 - A player controls one or more factions. When a player enters play, the engine
   creates the player a single faction (see
-  [Turns]({{< relref "/docs/reference/turns.md" >}})).
+  [Turns]({{< relref "/docs/reference/turns.md" >}})). Until a name generator
+  exists, a faction the engine seeds at turn 1 is given the placeholder name
+  `Faction <id>`, using its own id.
 
 ### NPC-controlled factions
 

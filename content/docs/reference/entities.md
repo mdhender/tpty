@@ -59,7 +59,9 @@ The engine creates entities.
   one **starting entity**, located in the player's
   [starting province]({{< relref "/docs/reference/players.md#starting-province" >}}).
   This happens as the game advances into turn 1 (see
-  [Turns]({{< relref "/docs/reference/turns.md" >}})).
+  [Turns]({{< relref "/docs/reference/turns.md" >}})). Until a name generator
+  exists, this starting entity is given the placeholder name `Entity <id>`, using
+  its own id.
 - During play, orders can create further entities. The orders that do so define
   the result; some are not yet implemented.
 
