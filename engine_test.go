@@ -61,17 +61,20 @@ func (h *recordingHandler) Apply(_ GameState, e Entity, o orders.Order, _, tick 
 	return OrderOutcome{EntityID: e.ID, Order: o, Message: "recorded"}
 }
 
-// TestProcessTurnHoldStub runs a submitted "hold" order end to end through
-// ProcessTurn with the default (all-stub) dispatch and confirms it completes,
-// records a stub no-op, and leaves no carryover.
-func TestProcessTurnHoldStub(t *testing.T) {
+// TestProcessTurnStubDispatch runs a submitted order end to end through
+// ProcessTurn with an explicitly all-stub dispatch (newStubDispatch) and confirms
+// it completes, records a stub no-op, and leaves no carryover. It uses the stub
+// dispatch so it exercises the timeline mechanics of an unimplemented command
+// regardless of which commands now have real handlers.
+func TestProcessTurnStubDispatch(t *testing.T) {
 	s := newEngineState(t)
 	createEntity(t, s, "Conan", "(0,0)")
 
 	in := TurnInput{
 		State:     s,
 		Turn:      1,
-		Submitted: []StoredOrders{{Turn: 1, PlayerID: 1, Raw: "g 1 pw\nentity 1, Conan\n    hold\n"}},
+		Dispatch:  newStubDispatch(),
+		Submitted: []StoredOrders{{Turn: 1, PlayerID: 1, Raw: "g 1 pw\nentity 1, Conan\n    explore\n"}},
 	}
 	res := ProcessTurn(in)
 
@@ -79,17 +82,17 @@ func TestProcessTurnHoldStub(t *testing.T) {
 		t.Fatalf("outcomes = %d, want 1: %+v", len(res.Outcomes), res.Outcomes)
 	}
 	oc := res.Outcomes[0]
-	if oc.EntityID != 1 || oc.Order.ID != orders.CmdHold {
-		t.Errorf("outcome = %+v, want entity 1 hold", oc)
+	if oc.EntityID != 1 || oc.Order.ID != orders.CmdExplore {
+		t.Errorf("outcome = %+v, want entity 1 explore", oc)
 	}
 	if !oc.Stub {
-		t.Error("hold should be handled by the stub no-op (Stub=false)")
+		t.Error("explore should be handled by the stub no-op (Stub=true)")
 	}
 	if oc.Message == "" {
 		t.Error("stub outcome should carry a message")
 	}
 	if len(res.Carryover) != 0 {
-		t.Errorf("carryover = %+v, want none (hold costs 7 < 30 ticks)", res.Carryover)
+		t.Errorf("carryover = %+v, want none (explore costs 7 < 30 ticks)", res.Carryover)
 	}
 }
 
@@ -396,9 +399,11 @@ func TestCommandMetadataCoversAllCommands(t *testing.T) {
 }
 
 // TestDispatchDefaultsToStub confirms an unregistered command id resolves to the
-// stub no-op handler.
+// stub no-op handler, and that Register binds a command to its handler. It uses
+// newStubDispatch (no real handlers) so the fallback behaviour is tested
+// independently of which commands NewDispatch now wires to real handlers.
 func TestDispatchDefaultsToStub(t *testing.T) {
-	d := NewDispatch()
+	d := newStubDispatch()
 	if _, ok := d.handlerFor(orders.CmdHold).(stubHandler); !ok {
 		t.Errorf("unregistered command routed to %T, want stubHandler", d.handlerFor(orders.CmdHold))
 	}
@@ -409,5 +414,21 @@ func TestDispatchDefaultsToStub(t *testing.T) {
 	}
 	if _, ok := d.handlerFor(orders.CmdMove).(stubHandler); !ok {
 		t.Error("other commands should still route to the stub")
+	}
+}
+
+// TestNewDispatchRegistersRealHandlers confirms the default dispatch ProcessTurn
+// uses wires Hold and Move to their real handlers, while other commands still
+// fall back to the stub.
+func TestNewDispatchRegistersRealHandlers(t *testing.T) {
+	d := NewDispatch()
+	if _, ok := d.handlerFor(orders.CmdHold).(holdHandler); !ok {
+		t.Errorf("hold routed to %T, want holdHandler", d.handlerFor(orders.CmdHold))
+	}
+	if _, ok := d.handlerFor(orders.CmdMove).(moveHandler); !ok {
+		t.Errorf("move routed to %T, want moveHandler", d.handlerFor(orders.CmdMove))
+	}
+	if _, ok := d.handlerFor(orders.CmdExplore).(stubHandler); !ok {
+		t.Errorf("explore routed to %T, want stubHandler (still stubbed)", d.handlerFor(orders.CmdExplore))
 	}
 }
