@@ -46,6 +46,9 @@ seeds, and current turn, and maps each of the game's data files to a location:
   "files": {
     "world": "./world.json",
     "players": "./players.json",
+    "factions": "./factions.json",
+    "entities": "./entities.json",
+    "orders": "./orders",
     "starting-provinces": "./starting-provinces.json",
     "terrain-translation": "./terrain-translation.json"
   }
@@ -57,6 +60,9 @@ seeds, and current turn, and maps each of the game's data files to a location:
 - A path may point outside that directory, so two games can share a file (for
   example, a common `world.json`) while keeping the rest separate. This is a
   convenience for development and testing.
+
+A player's submitted orders are stored under the `orders` directory, one file
+per turn per player, keyed by turn and player id.
 
 ## Seeds and subsystems
 
