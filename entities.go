@@ -54,6 +54,26 @@ func (s *EntityStore) Create(name string, factionID int, location string) (Entit
 	return e, nil
 }
 
+// SetLocation moves the entity with the given id to loc, canonicalizing loc via
+// ParseProvince and storing it in canonical compact form "(q,r)". It returns
+// ErrUnknownEntity if the store has no entity with that id, and the province
+// validation error (ErrInvalidProvince) if loc is not a canonical coordinate.
+// Grounded by content/docs/reference/entities.md (§Location: "An entity's
+// location changes as it moves").
+func (s *EntityStore) SetLocation(id int, loc string) error {
+	canonical, err := ParseProvince(loc)
+	if err != nil {
+		return err
+	}
+	for i := range s.Entities {
+		if s.Entities[i].ID == id {
+			s.Entities[i].Location = canonical
+			return nil
+		}
+	}
+	return fmt.Errorf("entity %d: %w", id, ErrUnknownEntity)
+}
+
 // ByID returns the entity with the given id, if any.
 func (s *EntityStore) ByID(id int) (Entity, bool) {
 	for _, e := range s.Entities {

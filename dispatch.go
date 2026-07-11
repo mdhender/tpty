@@ -120,10 +120,25 @@ type Dispatch struct {
 	stub     Handler
 }
 
-// NewDispatch returns a dispatch table in which every command id routes to the
-// stub no-op handler. Register replaces individual entries as real handlers are
-// implemented.
+// NewDispatch returns the default dispatch table ProcessTurn uses: the real
+// handlers implemented so far (Hold and Move) are registered, and every other
+// command id falls back to the stub no-op handler. Register replaces or adds
+// individual entries as further real handlers are implemented.
 func NewDispatch() *Dispatch {
+	d := &Dispatch{
+		handlers: make(map[orders.CommandID]Handler),
+		stub:     stubHandler{},
+	}
+	d.Register(orders.CmdHold, holdHandler{})
+	d.Register(orders.CmdMove, moveHandler{})
+	return d
+}
+
+// newStubDispatch returns a dispatch table in which every command id routes to
+// the stub no-op handler, with no real handlers registered. The engine's
+// mechanical and scheduler tests use it so their assertions about the timeline
+// do not depend on which commands have real handlers.
+func newStubDispatch() *Dispatch {
 	return &Dispatch{
 		handlers: make(map[orders.CommandID]Handler),
 		stub:     stubHandler{},
