@@ -9,6 +9,11 @@ Definitions of terms used across the reference.
 : The coordinate system used to report hex positions, written `(q, r)`. The
   origin is `(0, 0)`.
 
+**Faction**
+: A group of entities under a single controller — a player or an NPC. Belongs to
+  a game and owns the entities that carry out its orders. See
+  [Factions]({{< relref "/docs/reference/factions.md" >}}).
+
 **Flat-top**
 : The hex orientation used by the grid, with a flat edge at the top and bottom
   of each hex and north toward the top of the map.
@@ -30,6 +35,11 @@ Definitions of terms used across the reference.
   subsystem derives its own seeds from them. See
   [Games]({{< relref "/docs/reference/games.md" >}}) and
   [Determinism]({{< relref "/docs/reference/determinism.md" >}}).
+
+**NPC**
+: A computer agent that generates a faction's orders automatically — never a
+  player or the GM. An NPC can control a faction in place of a player. See
+  [Factions]({{< relref "/docs/reference/factions.md#controller" >}}).
 
 **Origin**
 : The center hex of the world, at axial coordinates `(0, 0)`.
