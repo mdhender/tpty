@@ -414,6 +414,152 @@ func TestProcessTurnDoubleProcessGuard(t *testing.T) {
 	}
 }
 
+// reloadGame reads and decodes the game.json written under dir.
+func reloadGame(t *testing.T, dir string) *tpty.Game {
+	t.Helper()
+	buf, err := os.ReadFile(filepath.Join(dir, "game.json"))
+	if err != nil {
+		t.Fatalf("read game.json: %v", err)
+	}
+	var game tpty.Game
+	if err := json.Unmarshal(buf, &game); err != nil {
+		t.Fatalf("decode game.json: %v", err)
+	}
+	return &game
+}
+
+// reloadFactions reads and decodes the factions.json written under dir.
+func reloadFactions(t *testing.T, dir string) *tpty.FactionStore {
+	t.Helper()
+	buf, err := os.ReadFile(filepath.Join(dir, "factions.json"))
+	if err != nil {
+		t.Fatalf("read factions.json: %v", err)
+	}
+	var store tpty.FactionStore
+	if err := json.Unmarshal(buf, &store); err != nil {
+		t.Fatalf("decode factions.json: %v", err)
+	}
+	return &store
+}
+
+// setupAdvanceGameTurnZero builds a data directory holding a fresh game at turn
+// 0 with one player and empty faction/entity stores — the state just before the
+// setup→play transition — so the 0→1 seeding path can be exercised without the
+// double-seeding that setupSubmitGame would cause. It returns the data directory
+// and the created player.
+func setupAdvanceGameTurnZero(t *testing.T) (dir string, player tpty.Player) {
+	t.Helper()
+	dir = t.TempDir()
+
+	seeds := prng.Seeds{Seed1: 1, Seed2: 2}
+	game, err := tpty.NewGame("test-game", seeds)
+	if err != nil {
+		t.Fatalf("NewGame: %v", err)
+	}
+	// game.Turn defaults to 0 (setup).
+	if err := writeJSON(filepath.Join(dir, "game.json"), game); err != nil {
+		t.Fatalf("write game.json: %v", err)
+	}
+
+	players := tpty.NewPlayerStore()
+	player, err = players.Create(seeds, "a@x.com", "alice", "(1,-1)")
+	if err != nil {
+		t.Fatalf("create player: %v", err)
+	}
+	if err := writeJSON(filepath.Join(dir, "players.json"), players); err != nil {
+		t.Fatalf("write players.json: %v", err)
+	}
+	if err := writeJSON(filepath.Join(dir, "factions.json"), tpty.NewFactionStore()); err != nil {
+		t.Fatalf("write factions.json: %v", err)
+	}
+	if err := writeJSON(filepath.Join(dir, "entities.json"), tpty.NewEntityStore()); err != nil {
+		t.Fatalf("write entities.json: %v", err)
+	}
+	return dir, player
+}
+
+// TestAdvanceTurnZeroSeedsAndPersists verifies that advancing from turn 0 makes
+// the game turn 1, seeds the player a faction and starting entity, persists all
+// three files, and reports the seeding.
+func TestAdvanceTurnZeroSeedsAndPersists(t *testing.T) {
+	dir, player := setupAdvanceGameTurnZero(t)
+
+	stdout, _, err := captureErr(t, func() error { return advanceTurn(dir) })
+	if err != nil {
+		t.Fatalf("advanceTurn = %v, want nil", err)
+	}
+
+	if got := reloadGame(t, dir); got.Turn != 1 {
+		t.Errorf("game.Turn = %d, want 1", got.Turn)
+	}
+
+	factions := reloadFactions(t, dir)
+	if len(factions.Factions) != 1 {
+		t.Fatalf("factions = %d, want 1", len(factions.Factions))
+	}
+	if c := factions.Factions[0].Controller; c.Kind != tpty.ControllerPlayer || c.ID != player.ID {
+		t.Errorf("faction controller = %+v, want player %d", c, player.ID)
+	}
+
+	entities := reloadEntities(t, dir)
+	if len(entities.Entities) != 1 {
+		t.Fatalf("entities = %d, want 1", len(entities.Entities))
+	}
+	if loc := entities.Entities[0].Location; loc != player.StartingProvince {
+		t.Errorf("entity location = %q, want %q", loc, player.StartingProvince)
+	}
+
+	if !strings.Contains(stdout, "turn 1") {
+		t.Errorf("stdout = %q, want it to report turn 1", stdout)
+	}
+	if !strings.Contains(stdout, "seeded 1") {
+		t.Errorf("stdout = %q, want it to report 1 player seeded", stdout)
+	}
+}
+
+// TestAdvanceUnprocessedTurnRefused verifies that advancing a turn at or beyond
+// turn 1 that has not been processed is refused and game.json is left unchanged.
+func TestAdvanceUnprocessedTurnRefused(t *testing.T) {
+	dir, _ := setupSubmitGame(t, 1)
+
+	_, _, err := captureErr(t, func() error { return advanceTurn(dir) })
+	if err == nil {
+		t.Fatal("advanceTurn on an unprocessed turn = nil error, want an error")
+	}
+	if !strings.Contains(err.Error(), "process turn 1 before advancing") {
+		t.Errorf("guard error = %q, want it to say 'process turn 1 before advancing'", err.Error())
+	}
+	if got := reloadGame(t, dir); got.Turn != 1 {
+		t.Errorf("game.Turn = %d, want it unchanged at 1", got.Turn)
+	}
+}
+
+// TestAdvanceProcessedTurnIncrements verifies that advancing a processed turn
+// N≥1 increments the turn (and seeds nothing), persisting game.json. The
+// processed precondition is written directly with tpty.SaveTurnResult.
+func TestAdvanceProcessedTurnIncrements(t *testing.T) {
+	dir, _ := setupSubmitGame(t, 1)
+
+	// Mark turn 1 processed by writing its result file.
+	if err := tpty.SaveTurnResult(filepath.Join(dir, "turns"), tpty.TurnResult{Turn: 1}); err != nil {
+		t.Fatalf("SaveTurnResult: %v", err)
+	}
+
+	stdout, _, err := captureErr(t, func() error { return advanceTurn(dir) })
+	if err != nil {
+		t.Fatalf("advanceTurn = %v, want nil", err)
+	}
+	if got := reloadGame(t, dir); got.Turn != 2 {
+		t.Errorf("game.Turn = %d, want 2", got.Turn)
+	}
+	if !strings.Contains(stdout, "turn 2") {
+		t.Errorf("stdout = %q, want it to report turn 2", stdout)
+	}
+	if strings.Contains(stdout, "seeded") {
+		t.Errorf("stdout = %q, want no seeding on a 1→2 advance", stdout)
+	}
+}
+
 // TestLoadFactionsMissingFile verifies that an absent factions file yields an
 // empty, non-nil store and no error.
 func TestLoadFactionsMissingFile(t *testing.T) {

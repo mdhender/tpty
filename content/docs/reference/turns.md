@@ -26,7 +26,9 @@ Play proceeds one turn at a time. For a turn `N`:
    processed — the tick timeline and the order scheduler — is described in
    [Turn Processing]({{< relref "/docs/reference/turn-processing.md" >}}).
 4. When satisfied with the result, the GM **advances** the game to turn `N+1`
-   and sends the reports for turn `N+1`.
+   and sends the reports for turn `N+1`. A turn can be advanced only once it has
+   been processed. Turn 0 (setup) is exempt from this guard — it has nothing to
+   process — and advancing 0→1 is what begins play.
 
 While collecting orders (step 2), the GM can check the **submission status** for
 the current turn — which active players have submitted

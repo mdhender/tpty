@@ -70,6 +70,7 @@ func main() {
 //	│   ├── reset-password
 //	│   └── show
 //	├── turn
+//	│   ├── advance
 //	│   └── process
 //	└── world
 //	    ├── generate
@@ -458,9 +459,107 @@ func newTurnCommand(parent *ff.FlagSet, data *string) *ff.Command {
 	}
 
 	cmd.Subcommands = []*ff.Command{
+		newTurnAdvanceCommand(turnFlags, data),
 		newTurnProcessCommand(turnFlags, data),
 	}
 	return cmd
+}
+
+// newTurnAdvanceCommand builds the "turn advance" command, which commits the
+// current turn and moves the game to the next one (N → N+1), enforces the
+// "advance only a processed turn" guard, and — on the setup→play transition
+// (0→1) — seeds each active player their starting faction and entity.
+//
+// See content/docs/reference/turns.md ("Per-turn lifecycle", step 4).
+func newTurnAdvanceCommand(parent *ff.FlagSet, data *string) *ff.Command {
+	fs := ff.NewFlagSet("advance").SetParent(parent)
+
+	return &ff.Command{
+		Name:      "advance",
+		Usage:     "tpty turn advance [FLAGS]",
+		ShortHelp: "advance the game to the next turn",
+		Flags:     fs,
+		Exec: func(ctx context.Context, args []string) error {
+			if len(args) > 0 {
+				return fmt.Errorf("unexpected argument %q: this command takes flags only, no positional arguments", args[0])
+			}
+			if *data == "" {
+				return fmt.Errorf("--data is required")
+			}
+			return advanceTurn(*data)
+		},
+	}
+}
+
+// advanceTurn advances the game to the next turn (N → N+1). It loads the game
+// and the player/faction/entity stores, enforces the "advance only a processed
+// turn" guard for turns at or beyond turn 1, runs tpty.AdvanceTurn (which
+// increments the turn and, on the 0→1 setup→play transition, seeds each active
+// player a faction and starting entity), and persists the results.
+//
+// Turn 0 is exempt from the processed guard: setup has nothing to process, and
+// advancing 0→1 begins play and triggers the one-time seeding. game.json is
+// always rewritten; factions.json and entities.json are rewritten only when
+// seeding could have changed them (the new turn is 1).
+//
+// See content/docs/reference/turns.md ("Per-turn lifecycle", step 4 and the
+// guards) and content/docs/reference/entities.md / factions.md (turn-1 seeding).
+func advanceTurn(data string) error {
+	game, files, err := loadGame(data)
+	if err != nil {
+		return err
+	}
+
+	// Guard — advance only a processed turn. Once play has begun (turn >= 1) the
+	// current turn must be processed before the GM commits it and moves on; the
+	// result file's existence is the "processed" marker. Turn 0 is exempt: setup
+	// has nothing to process, and advancing 0→1 is the start of play.
+	if game.Turn >= 1 {
+		if _, err := tpty.LoadTurnResult(files.Turns, game.Turn); err != nil {
+			if errors.Is(err, tpty.ErrTurnNotProcessed) {
+				return fmt.Errorf("process turn %d before advancing (run 'tpty turn process')", game.Turn)
+			}
+			return fmt.Errorf("check turn %d result: %w", game.Turn, err)
+		}
+	}
+
+	players, err := loadPlayers(files.Players)
+	if err != nil {
+		return err
+	}
+	factions, err := loadFactions(files.Factions)
+	if err != nil {
+		return err
+	}
+	entities, err := loadEntities(files.Entities)
+	if err != nil {
+		return err
+	}
+
+	seeded, err := tpty.AdvanceTurn(game, players, factions, entities)
+	if err != nil {
+		return fmt.Errorf("advance turn: %w", err)
+	}
+
+	// Persist the game manifest always (the turn changed). When the new turn is 1
+	// the stores were seeded, so persist them too.
+	if err := writeJSON(filepath.Join(data, "game.json"), game); err != nil {
+		return fmt.Errorf("write game: %w", err)
+	}
+	if game.Turn == 1 {
+		if err := writeJSON(files.Factions, factions); err != nil {
+			return fmt.Errorf("write factions: %w", err)
+		}
+		if err := writeJSON(files.Entities, entities); err != nil {
+			return fmt.Errorf("write entities: %w", err)
+		}
+	}
+
+	fmt.Printf("advanced game %q to turn %d\n", game.ID, game.Turn)
+	if seeded > 0 {
+		fmt.Printf("  seeded %d player(s): one faction and one starting entity each\n", seeded)
+	}
+	return nil
 }
 
 // newTurnProcessCommand builds the "turn process" command, which runs the
