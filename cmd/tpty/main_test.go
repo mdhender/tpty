@@ -237,6 +237,68 @@ func TestSubmitOrdersWarningsButAccepted(t *testing.T) {
 	}
 }
 
+// TestListOrdersNoSubmissions verifies that at the current turn, before anyone
+// has submitted (the turn directory is absent), every active player is shown as
+// "not submitted" and the summary reports 0 submitted.
+func TestListOrdersNoSubmissions(t *testing.T) {
+	dir, player := setupSubmitGame(t, 1)
+
+	stdout, _, err := captureErr(t, func() error { return listOrders(dir) })
+	if err != nil {
+		t.Fatalf("listOrders = %v, want nil", err)
+	}
+	if !strings.Contains(stdout, player.Handle) {
+		t.Errorf("stdout = %q, want it to list player %q", stdout, player.Handle)
+	}
+	if !strings.Contains(stdout, "not submitted") {
+		t.Errorf("stdout = %q, want the player shown as not submitted", stdout)
+	}
+	if !strings.Contains(stdout, "0 of 1 active player(s) have submitted") {
+		t.Errorf("stdout = %q, want a '0 of 1' summary", stdout)
+	}
+}
+
+// TestListOrdersAfterSubmission verifies that once a submission exists for a
+// player they are shown as "submitted" and the summary count reflects it.
+func TestListOrdersAfterSubmission(t *testing.T) {
+	dir, player := setupSubmitGame(t, 1)
+
+	// Store a submission for the player directly, the same way "orders submit"
+	// would.
+	stored := tpty.StoredOrders{Turn: 1, PlayerID: player.ID, Raw: "\"test-game\" 1 \"pw\"\n"}
+	if err := writeJSON(tpty.PlayerOrdersPath(filepath.Join(dir, "orders"), 1, player.ID), stored); err != nil {
+		t.Fatalf("write stored orders: %v", err)
+	}
+
+	stdout, _, err := captureErr(t, func() error { return listOrders(dir) })
+	if err != nil {
+		t.Fatalf("listOrders = %v, want nil", err)
+	}
+	if !strings.Contains(stdout, "submitted") {
+		t.Errorf("stdout = %q, want the player shown as submitted", stdout)
+	}
+	if strings.Contains(stdout, "not submitted") {
+		t.Errorf("stdout = %q, want no 'not submitted' rows (the only player has submitted)", stdout)
+	}
+	if !strings.Contains(stdout, "1 of 1 active player(s) have submitted") {
+		t.Errorf("stdout = %q, want a '1 of 1' summary", stdout)
+	}
+}
+
+// TestListOrdersTurnZeroGuard verifies that a game at turn 0 refuses the status
+// view, consistent with "orders submit".
+func TestListOrdersTurnZeroGuard(t *testing.T) {
+	dir, _ := setupSubmitGame(t, 0)
+
+	_, _, err := captureErr(t, func() error { return listOrders(dir) })
+	if err == nil {
+		t.Fatal("listOrders at turn 0 = nil error, want an error")
+	}
+	if !strings.Contains(err.Error(), "turn") || !strings.Contains(err.Error(), "play") {
+		t.Errorf("turn-0 error = %q, want it to mention the turn and play", err.Error())
+	}
+}
+
 // TestLoadFactionsMissingFile verifies that an absent factions file yields an
 // empty, non-nil store and no error.
 func TestLoadFactionsMissingFile(t *testing.T) {

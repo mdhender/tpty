@@ -60,6 +60,7 @@ func main() {
 //	├── game
 //	│   └── create
 //	├── orders
+//	│   ├── list
 //	│   └── submit
 //	├── player
 //	│   ├── create
@@ -217,9 +218,97 @@ func newOrdersCommand(parent *ff.FlagSet, data *string) *ff.Command {
 	}
 
 	cmd.Subcommands = []*ff.Command{
+		newOrdersListCommand(ordersFlags, data),
 		newOrdersSubmitCommand(ordersFlags, data),
 	}
 	return cmd
+}
+
+// newOrdersListCommand builds the "orders list" command, which shows, for the
+// game's current turn, which active players have submitted orders and which have
+// not, so the GM can tell when everyone is in and it is time to process the turn.
+//
+// See content/docs/reference/turns.md, "Per-turn lifecycle".
+func newOrdersListCommand(parent *ff.FlagSet, data *string) *ff.Command {
+	fs := ff.NewFlagSet("list").SetParent(parent)
+
+	return &ff.Command{
+		Name:      "list",
+		Usage:     "tpty orders list [FLAGS]",
+		ShortHelp: "show which active players have submitted orders for the current turn",
+		Flags:     fs,
+		Exec: func(ctx context.Context, args []string) error {
+			if len(args) > 0 {
+				return fmt.Errorf("unexpected argument %q: this command takes flags only, no positional arguments", args[0])
+			}
+			if *data == "" {
+				return fmt.Errorf("--data is required")
+			}
+			return listOrders(*data)
+		},
+	}
+}
+
+// listOrders prints, for the game's current turn, a table of every active player
+// and whether they have submitted orders (submitted / not submitted), with a
+// summary count, so the GM can tell when everyone is in and it is time to process
+// the turn.
+//
+// A player counts as "submitted" when a stored orders file exists for them under
+// the current turn's order directory (as written by "orders submit"). A missing
+// turn directory — nobody has submitted yet — is not an error: every active
+// player is then "not submitted".
+//
+// See content/docs/reference/turns.md, "Per-turn lifecycle", and
+// content/docs/reference/orders/_index.md.
+func listOrders(data string) error {
+	game, files, err := loadGame(data)
+	if err != nil {
+		return err
+	}
+
+	// Orders are collected for the current turn; turn 0 is setup and has no play.
+	// Match "orders submit", which likewise refuses at turn 0.
+	if game.Turn < 1 {
+		return fmt.Errorf("the game is at turn 0 (setup); orders are collected once play begins at turn 1")
+	}
+
+	store, err := loadPlayers(files.Players)
+	if err != nil {
+		return err
+	}
+
+	// A player is "submitted" when a stored orders file exists for them at the
+	// current turn. Stat each active player's path rather than reading the turn
+	// directory, so status is reported against the active set (a stale file from a
+	// since-removed player is ignored).
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(w, "ID\tHANDLE\tSTATUS")
+	active, submitted := 0, 0
+	for _, p := range store.Players {
+		if !p.Active() {
+			continue
+		}
+		active++
+		status := "not submitted"
+		if _, statErr := os.Stat(tpty.PlayerOrdersPath(files.Orders, game.Turn, p.ID)); statErr == nil {
+			status = "submitted"
+			submitted++
+		} else if !errors.Is(statErr, os.ErrNotExist) {
+			return fmt.Errorf("stat orders for player %d: %w", p.ID, statErr)
+		}
+		fmt.Fprintf(w, "%d\t%s\t%s\n", p.ID, p.Handle, status)
+	}
+	if err := w.Flush(); err != nil {
+		return err
+	}
+
+	if active == 0 {
+		fmt.Printf("game %q has no active players\n", game.ID)
+		return nil
+	}
+	fmt.Printf("%d of %d active player(s) have submitted orders for turn %d\n", submitted, active, game.Turn)
+	return nil
 }
 
 // newOrdersSubmitCommand builds the "orders submit" command, which ingests a

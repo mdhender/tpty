@@ -28,6 +28,11 @@ Play proceeds one turn at a time. For a turn `N`:
 4. When satisfied with the result, the GM **advances** the game to turn `N+1`
    and sends the reports for turn `N+1`.
 
+While collecting orders (step 2), the GM can check the **submission status** for
+the current turn — which active players have submitted
+[orders]({{< relref "/docs/reference/orders/_index.md" >}}) and which have not —
+to tell when everyone is in and it is time to process.
+
 The current turn does not change while orders are being collected or processed;
 it changes only when the GM advances the game.
 
