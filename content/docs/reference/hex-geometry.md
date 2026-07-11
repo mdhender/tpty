@@ -1,6 +1,6 @@
 ---
 title: Hex Geometry
-weight: 5
+weight: 10
 ---
 
 The world is a grid of regular, **flat-top** hexes (see

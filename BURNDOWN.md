@@ -66,12 +66,15 @@ Of the six MVP verbs, **create a game** and **add players** are done.
 4. **`reference/reports.md`.** A turn report: game state at the **start** of turn
    `N` (per `turns.md`), scoped to one player — their factions, their entities,
    and the province descriptions those entities see. The report format.
-5. **Extend `reference/turns.md` with processing semantics.** The turn-execution
-   model: the day/week cycle, the fixed order in which commands resolve
-   (**the "ordering within the set" problem**), the guards (no processing before
-   orders collected, no double-processing, no advance before processing), and
-   how processing draws randomness (PRNG stream keyed by turn + new domain tags)
-   so results are deterministic.
+5. **Add `reference/turn-processing.md` (engine-facing, ticks); point `turns.md`
+   at it.** The turn-execution model: the 32-tick timeline (0 setup / 1–30 work
+   / 31 cleanup), each entity's FIFO order queue with a ticks-left counter, the
+   scheduler's total resolution order — priority (1–5) → location → seniority
+   (**the "ordering within the set" problem**), carryover of unfinished orders,
+   and PRNG seeding by turn + tick + new domain tags. `turns.md` stays
+   player-facing (days) with a pointer. The turn guards (no processing before
+   orders collected, no double-processing, no advance before processing) are
+   enforced by the process/advance commands (items 14, 17).
 
 > Per-command entries under `reference/orders/` (and any subsystem references
 > they pull in — skills, things/inventory, stacks, combat) are written **as each
@@ -82,9 +85,14 @@ Of the six MVP verbs, **create a game** and **add players** are done.
 
 ## Model layer: factions & entities
 
-6. **Add domain tag(s) for turn/faction/entity/order randomness** in
-   `internal/prng/tags.go` (append-only; never reorder). Land early so the
-   address encoding is settled.
+6. **PRNG domain tags — appended per consumer, none speculative.** Decided: no
+   tags are added up front. `internal/prng/tags.go` is append-only and every new
+   tag must ship a golden vector, so a tag is added only when a real consumer
+   lands. Order-effect randomness uses a **per-order** tag, added as that order
+   is implemented (item 15), keyed `[tag, entityId, turn, tick]` (see
+   `turn-processing.md`). Seeded factions/entities have no names yet (no naming
+   tags) and carry no private seeds. The key-path encoding itself is already
+   frozen in `prng.go`.
 7. **Faction domain type + storage** (implements `factions.md`). Struct, add
    file to `GameFiles` / `DefaultGameFiles`, load/save, CRUD as needed.
 8. **Entity domain type + storage** (implements `entities.md`) — the minimal

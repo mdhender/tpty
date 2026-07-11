@@ -1,6 +1,6 @@
 ---
 title: Determinism
-weight: 6
+weight: 11
 ---
 
 The engine is deterministic: the same master seeds always reproduce the same
