@@ -9,6 +9,11 @@ Definitions of terms used across the reference.
 : The coordinate system used to report hex positions, written `(q, r)`. The
   origin is `(0, 0)`.
 
+**Entity**
+: An actor in a game's world. It occupies a province and carries out its
+  faction's orders. Belongs to exactly one faction. See
+  [Entities]({{< relref "/docs/reference/entities.md" >}}).
+
 **Faction**
 : A group of entities under a single controller — a player or an NPC. Belongs to
   a game and owns the entities that carry out its orders. See
