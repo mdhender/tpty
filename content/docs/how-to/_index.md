@@ -15,4 +15,7 @@ task. Come here when you already know the basics and need to get something done.
   {{< card link="recruit-players" title="Recruit players and add them to a game" subtitle="Offer starting provinces and add each player" >}}
   {{< card link="list-and-inspect-players" title="List and inspect players" subtitle="Review the players in a game and resend passwords" >}}
   {{< card link="reset-a-password" title="Reset an exposed password" subtitle="Reissue a player's order password when it has leaked" >}}
+  {{< card link="accept-orders" title="Accept a player's orders" subtitle="Ingest a saved orders file and check who has submitted" >}}
+  {{< card link="process-and-advance-a-turn" title="Process and advance a turn" subtitle="Run the engine over a turn and move the game forward" >}}
+  {{< card link="generate-turn-reports" title="Generate turn reports" subtitle="Produce each active player's start-of-turn report" >}}
 {{< /cards >}}
