@@ -108,6 +108,7 @@ func TestGameFilesResolve(t *testing.T) {
 	f := GameFiles{
 		World:              "./world.json",
 		Players:            "players.json",
+		Factions:           "factions.json",
 		StartingProvinces:  abs, // absolute: unchanged
 		TerrainTranslation: "",  // empty: unchanged
 	}
@@ -117,6 +118,9 @@ func TestGameFilesResolve(t *testing.T) {
 	}
 	if want := filepath.Join(base, "players.json"); got.Players != want {
 		t.Errorf("Players = %q, want %q", got.Players, want)
+	}
+	if want := filepath.Join(base, "factions.json"); got.Factions != want {
+		t.Errorf("Factions = %q, want %q", got.Factions, want)
 	}
 	if got.StartingProvinces != abs {
 		t.Errorf("StartingProvinces = %q, want %q (absolute paths are unchanged)", got.StartingProvinces, abs)

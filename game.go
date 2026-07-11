@@ -31,6 +31,7 @@ type Game struct {
 type GameFiles struct {
 	World              string `json:"world"`
 	Players            string `json:"players"`
+	Factions           string `json:"factions"`
 	StartingProvinces  string `json:"starting-provinces"`
 	TerrainTranslation string `json:"terrain-translation"`
 }
@@ -45,6 +46,7 @@ func DefaultGameFiles() GameFiles {
 	return GameFiles{
 		World:              "./world.json",
 		Players:            "./players.json",
+		Factions:           "./factions.json",
 		StartingProvinces:  "./starting-provinces.json",
 		TerrainTranslation: "./terrain-translation.json",
 	}
@@ -88,6 +90,7 @@ func (f GameFiles) Resolve(baseDir string) GameFiles {
 	return GameFiles{
 		World:              resolve(f.World),
 		Players:            resolve(f.Players),
+		Factions:           resolve(f.Factions),
 		StartingProvinces:  resolve(f.StartingProvinces),
 		TerrainTranslation: resolve(f.TerrainTranslation),
 	}
