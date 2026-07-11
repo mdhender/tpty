@@ -891,6 +891,76 @@ func runGenerate(t *testing.T, dir string, ring int, overwrite bool) (stdout, st
 	return stdout, stderr, err
 }
 
+// TestWriteReportsWritesOnePerActivePlayer verifies that writeReports at turn 1
+// writes one JSON report per active player, the summary reports the count, and a
+// written report decodes to the expected player, turn, faction, and entity.
+func TestWriteReportsWritesOnePerActivePlayer(t *testing.T) {
+	dir, player := setupSubmitGame(t, 1)
+
+	stdout, _, err := captureErr(t, func() error { return writeReports(dir) })
+	if err != nil {
+		t.Fatalf("writeReports = %v, want nil", err)
+	}
+	if !strings.Contains(stdout, "generated 1 report(s) for turn 1") {
+		t.Errorf("summary = %q, want it to report 1 report for turn 1", stdout)
+	}
+
+	path := tpty.PlayerReportPath(filepath.Join(dir, "reports"), 1, player.ID)
+	buf, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read report: %v", err)
+	}
+	var report tpty.Report
+	if err := json.Unmarshal(buf, &report); err != nil {
+		t.Fatalf("decode report: %v", err)
+	}
+	if report.PlayerID != player.ID {
+		t.Errorf("report PlayerID = %d, want %d", report.PlayerID, player.ID)
+	}
+	if report.PlayerHandle != player.Handle {
+		t.Errorf("report PlayerHandle = %q, want %q", report.PlayerHandle, player.Handle)
+	}
+	if report.Turn != 1 {
+		t.Errorf("report Turn = %d, want 1", report.Turn)
+	}
+	if len(report.Factions) != 1 {
+		t.Fatalf("report has %d factions, want 1", len(report.Factions))
+	}
+	if report.Factions[0].Controller.Kind != tpty.ControllerPlayer || report.Factions[0].Controller.ID != player.ID {
+		t.Errorf("report faction controller = %+v, want player %d", report.Factions[0].Controller, player.ID)
+	}
+	if len(report.Entities) != 1 {
+		t.Fatalf("report has %d entities, want 1", len(report.Entities))
+	}
+	if report.Entities[0].Location != player.StartingProvince {
+		t.Errorf("report entity location = %q, want %q", report.Entities[0].Location, player.StartingProvince)
+	}
+	if report.Entities[0].FactionID != report.Factions[0].ID {
+		t.Errorf("report entity faction = %d, want %d", report.Entities[0].FactionID, report.Factions[0].ID)
+	}
+}
+
+// TestWriteReportsTurnZeroGuard verifies that a game at turn 0 refuses to
+// generate reports and writes nothing.
+func TestWriteReportsTurnZeroGuard(t *testing.T) {
+	dir, player := setupSubmitGame(t, 0)
+
+	_, _, err := captureErr(t, func() error { return writeReports(dir) })
+	if err == nil {
+		t.Fatal("writeReports at turn 0 = nil error, want an error")
+	}
+	if !strings.Contains(err.Error(), "turn") || !strings.Contains(err.Error(), "play") {
+		t.Errorf("turn-0 error = %q, want it to mention the turn and play", err.Error())
+	}
+	path := tpty.PlayerReportPath(filepath.Join(dir, "reports"), 0, player.ID)
+	if _, statErr := os.Stat(path); statErr == nil {
+		t.Error("a report was written despite the turn-0 guard")
+	}
+	if _, statErr := os.Stat(filepath.Join(dir, "reports")); statErr == nil {
+		t.Error("the reports directory was created despite the turn-0 guard")
+	}
+}
+
 func equalStrings(a, b []string) bool {
 	if len(a) != len(b) {
 		return false

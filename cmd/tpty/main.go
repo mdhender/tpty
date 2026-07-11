@@ -461,6 +461,7 @@ func newTurnCommand(parent *ff.FlagSet, data *string) *ff.Command {
 	cmd.Subcommands = []*ff.Command{
 		newTurnAdvanceCommand(turnFlags, data),
 		newTurnProcessCommand(turnFlags, data),
+		newTurnReportCommand(turnFlags, data),
 	}
 	return cmd
 }
@@ -680,6 +681,84 @@ func processTurn(data string) error {
 		len(subs), len(result.Outcomes), executed, stubbed)
 	fmt.Printf("  %d carryover queue(s) for turn %d\n", len(result.Carryover), game.Turn+1)
 	fmt.Printf("wrote %s\n", resultPath)
+	return nil
+}
+
+// newTurnReportCommand builds the "turn report" command, which generates one
+// turn report per active player for the game's current turn and writes each as a
+// JSON file under the reports directory. It does not mutate or advance the turn.
+//
+// See content/docs/reference/reports.md.
+func newTurnReportCommand(parent *ff.FlagSet, data *string) *ff.Command {
+	fs := ff.NewFlagSet("report").SetParent(parent)
+
+	return &ff.Command{
+		Name:      "report",
+		Usage:     "tpty turn report [FLAGS]",
+		ShortHelp: "generate each active player's turn report",
+		Flags:     fs,
+		Exec: func(ctx context.Context, args []string) error {
+			if len(args) > 0 {
+				return fmt.Errorf("unexpected argument %q: this command takes flags only, no positional arguments", args[0])
+			}
+			if *data == "" {
+				return fmt.Errorf("--data is required")
+			}
+			return writeReports(*data)
+		},
+	}
+}
+
+// writeReports generates a turn report for each active player at the game's
+// current turn and writes each as a JSON file under the reports directory
+// (reports/turn-NNNN/player-NNNN.json). A report describes the start of the
+// current turn, so run it right after advancing (before processing). It reads
+// the live player/faction/entity stores and does not mutate or advance the turn.
+//
+// Guard — turn 0 is setup and has no play (no factions or entities yet), so it
+// refuses at turn 0, matching the other turn commands.
+//
+// Delivery is manual: the reports are written to disk for the GM to send each
+// player their own file. There is no automated mail (see
+// content/docs/reference/reports.md, "Delivery").
+//
+// See content/docs/reference/reports.md.
+func writeReports(data string) error {
+	game, files, err := loadGame(data)
+	if err != nil {
+		return err
+	}
+
+	// Guard — turn 0 is setup and has no play. Match the other turn commands,
+	// which likewise refuse at turn 0.
+	if game.Turn < 1 {
+		return fmt.Errorf("the game is at turn 0 (setup); reports are generated once play begins at turn 1")
+	}
+
+	players, err := loadPlayers(files.Players)
+	if err != nil {
+		return err
+	}
+	factions, err := loadFactions(files.Factions)
+	if err != nil {
+		return err
+	}
+	entities, err := loadEntities(files.Entities)
+	if err != nil {
+		return err
+	}
+
+	reports := tpty.GenerateReports(game, players, factions, entities, game.Turn)
+	for _, report := range reports {
+		if err := tpty.SaveReport(files.Reports, report); err != nil {
+			return fmt.Errorf("write report for player %d: %w", report.PlayerID, err)
+		}
+	}
+
+	reportDir := tpty.ReportsTurnDir(files.Reports, game.Turn)
+	fmt.Printf("generated %d report(s) for turn %d of game %q\n", len(reports), game.Turn, game.ID)
+	fmt.Printf("wrote %s\n", reportDir)
+	fmt.Printf("  delivery is manual: send each player their own file\n")
 	return nil
 }
 

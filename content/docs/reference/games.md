@@ -50,6 +50,7 @@ seeds, and current turn, and maps each of the game's data files to a location:
     "entities": "./entities.json",
     "orders": "./orders",
     "turns": "./turns",
+    "reports": "./reports",
     "starting-provinces": "./starting-provinces.json",
     "terrain-translation": "./terrain-translation.json"
   }
@@ -68,6 +69,11 @@ per turn per player, keyed by turn and player id.
 The result of processing a turn is stored under the `turns` directory, one
 subdirectory per turn (keyed by turn), holding that turn's processing output.
 See [Turn Processing]({{< relref "/docs/reference/turn-processing.md" >}}).
+
+Each player's turn [report]({{< relref "/docs/reference/reports.md" >}}) is
+stored under the `reports` directory, one subdirectory per turn (keyed by turn)
+holding one file per active player (keyed by player id). Reports are written in
+a structured JSON model; a human-readable presentation format is future work.
 
 ## Seeds and subsystems
 
