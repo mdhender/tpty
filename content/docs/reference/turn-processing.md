@@ -57,6 +57,15 @@ For example, a 7-day move starts with ticks-left `7`; when it reaches `0`, the
 entity's location updates at the start of the next tick. Tick 31 exists so a move
 that completes on tick 30 still applies within the turn.
 
+A command whose cost the [Orders]({{< relref "/docs/reference/orders" >}}) summary
+lists as `varies` (or `0+`) has no fixed time cost: the cost depends on the
+order's parameters or outcome and is reported by the command's handler when the
+order becomes active. Until each such command is implemented, the engine's stub
+handler reports a provisional cost of `7` ticks — one week, a single standard
+action — for these commands, except `tell` (listed `0+`), whose provisional base
+is `0`. These provisional costs are replaced by each command's real cost as it
+is implemented.
+
 ## The tick scheduler
 
 Within a working tick, many entities have an active order. The engine resolves
@@ -102,6 +111,12 @@ same location share a seniority — which is why seniority is a tie-free
 tie-breaker for the scheduler.
 
 Today all locations are provinces; stacks nest in the same way.
+
+Provinces do not yet keep an explicit FIFO arrival list, so the engine derives
+seniority from the entities' stable storage order within a location: of two
+entities in the same province, the one stored earlier is the more senior. This
+is a provisional interpretation of the seniority rule above and is replaced once
+provinces model the arrival list directly.
 
 ## Randomness
 
