@@ -130,6 +130,11 @@ func TestGameFilesResolve(t *testing.T) {
 	if want := filepath.Join(base, "orders"); got.Orders != want {
 		t.Errorf("Orders = %q, want %q", got.Orders, want)
 	}
+	// Turns was left empty (an older manifest predating the turns directory); it
+	// falls back to the default "./turns" and resolves against base.
+	if want := filepath.Join(base, "turns"); got.Turns != want {
+		t.Errorf("Turns = %q, want %q (empty falls back to the default)", got.Turns, want)
+	}
 	if got.StartingProvinces != abs {
 		t.Errorf("StartingProvinces = %q, want %q (absolute paths are unchanged)", got.StartingProvinces, abs)
 	}
