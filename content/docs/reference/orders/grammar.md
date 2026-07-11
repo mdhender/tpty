@@ -12,10 +12,12 @@ Notation:
 
 - `<parameter>` is required.
 - `[parameter]` is optional.
+- `+` after a parameter means one or more, repeated (for example, `<direction>+`
+  is a path of one or more directions).
 
 ```
 hold
-move <direction>
+move <direction>+
 attack [direction]
 use [skill] [target] [modifier]
 take <unit>
@@ -28,10 +30,10 @@ sell <thing> [to] <price> [number]
 follow [entity]
 explore
 persuade <entity> [skill] [bribe]
-swear [lord-entity]
+swear [lordEntity]
 pay <entity> <money> <moneyLeft>
 declare [entity] <opinion>
-recruit <numberSought> payOffered
+recruit <numberSought> <payOffered>
 form <armor> [speciesHired] [amount] [numOrders]
 pillage <province> [severity]
 tax <province> [severity]
@@ -39,7 +41,7 @@ execute <captive>
 terrorize [province] [severity] [mode]
 wait [days]
 armor [newRating]
-tell [entity] <y/n/number> [number]
+tell [entity] <yesNoNumber> [number]
 garrison [state]
 ```
 
