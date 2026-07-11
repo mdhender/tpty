@@ -22,7 +22,9 @@ Play proceeds one turn at a time. For a turn `N`:
 
 1. The GM sends each player their **report** for turn `N`.
 2. Players read their reports and issue **orders** for turn `N`.
-3. The GM **processes** turn `N`, applying every player's orders.
+3. The GM **processes** turn `N`, applying every player's orders. How a turn is
+   processed — the tick timeline and the order scheduler — is described in
+   [Turn Processing]({{< relref "/docs/reference/turn-processing.md" >}}).
 4. When satisfied with the result, the GM **advances** the game to turn `N+1`
    and sends the reports for turn `N+1`.
 
@@ -37,6 +39,7 @@ for turn `N` is what a player sees in order to decide their orders for turn `N`.
 
 ## See also
 
+- [Turn Processing]({{< relref "/docs/reference/turn-processing.md" >}})
 - [Games]({{< relref "/docs/reference/games.md" >}})
 - [Players]({{< relref "/docs/reference/players.md" >}})
 - [Glossary]({{< relref "/docs/reference/glossary.md" >}})

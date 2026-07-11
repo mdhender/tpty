@@ -61,12 +61,23 @@ Definitions of terms used across the reference.
 : The set of provinces at a fixed distance from the origin. Ring `0` is the
   origin; ring `k` contains `6k` provinces.
 
+**Seniority**
+: An entity's position in the FIFO list of the location it occupies; the earlier
+  in the list, the more senior. Unique within a location, so it is the
+  scheduler's tie-free tie-breaker. See
+  [Turn Processing]({{< relref "/docs/reference/turn-processing.md#seniority" >}}).
+
 **Starting province**
 : The province a player occupies when entering a game. Must be one of the game's
   allowed starting provinces. See [Players]({{< relref "/docs/reference/players.md" >}}).
 
 **Terrain**
 : The kind of land assigned to a province (for example, Plains or Mountain).
+
+**Tick**
+: The engine's unit of time within a turn; one tick is one day. A turn is
+  processed as 32 ticks. See
+  [Turn Processing]({{< relref "/docs/reference/turn-processing.md" >}}).
 
 **Tile**
 : The permanent aspect of a province (for example, "an ocean tile").
