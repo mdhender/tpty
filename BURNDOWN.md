@@ -85,9 +85,14 @@ Of the six MVP verbs, **create a game** and **add players** are done.
 
 ## Model layer: factions & entities
 
-6. **Add domain tag(s) for turn/faction/entity/order randomness** in
-   `internal/prng/tags.go` (append-only; never reorder). Land early so the
-   address encoding is settled.
+6. **PRNG domain tags — appended per consumer, none speculative.** Decided: no
+   tags are added up front. `internal/prng/tags.go` is append-only and every new
+   tag must ship a golden vector, so a tag is added only when a real consumer
+   lands. Order-effect randomness uses a **per-order** tag, added as that order
+   is implemented (item 15), keyed `[tag, entityId, turn, tick]` (see
+   `turn-processing.md`). Seeded factions/entities have no names yet (no naming
+   tags) and carry no private seeds. The key-path encoding itself is already
+   frozen in `prng.go`.
 7. **Faction domain type + storage** (implements `factions.md`). Struct, add
    file to `GameFiles` / `DefaultGameFiles`, load/save, CRUD as needed.
 8. **Entity domain type + storage** (implements `entities.md`) — the minimal
