@@ -1,6 +1,6 @@
 ---
 title: Entities
-weight: 5
+weight: 6
 ---
 
 An **entity** is an actor in a game's world. It occupies a province, and it

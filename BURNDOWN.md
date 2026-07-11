@@ -66,12 +66,15 @@ Of the six MVP verbs, **create a game** and **add players** are done.
 4. **`reference/reports.md`.** A turn report: game state at the **start** of turn
    `N` (per `turns.md`), scoped to one player — their factions, their entities,
    and the province descriptions those entities see. The report format.
-5. **Extend `reference/turns.md` with processing semantics.** The turn-execution
-   model: the day/week cycle, the fixed order in which commands resolve
-   (**the "ordering within the set" problem**), the guards (no processing before
-   orders collected, no double-processing, no advance before processing), and
-   how processing draws randomness (PRNG stream keyed by turn + new domain tags)
-   so results are deterministic.
+5. **Add `reference/turn-processing.md` (engine-facing, ticks); point `turns.md`
+   at it.** The turn-execution model: the 32-tick timeline (0 setup / 1–30 work
+   / 31 cleanup), each entity's FIFO order queue with a ticks-left counter, the
+   scheduler's total resolution order — priority (1–5) → location → seniority
+   (**the "ordering within the set" problem**), carryover of unfinished orders,
+   and PRNG seeding by turn + tick + new domain tags. `turns.md` stays
+   player-facing (days) with a pointer. The turn guards (no processing before
+   orders collected, no double-processing, no advance before processing) are
+   enforced by the process/advance commands (items 14, 17).
 
 > Per-command entries under `reference/orders/` (and any subsystem references
 > they pull in — skills, things/inventory, stacks, combat) are written **as each
