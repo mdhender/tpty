@@ -107,10 +107,13 @@ whitespace:
 
 - The command word is one of the orders in the [command summary](#command-summary)
   below. It is matched case-insensitively.
-- Parameters are integers. Game objects — entities, skills, things, provinces,
-  directions — are referred to by their number. Which numbers are valid for a
-  given parameter is defined by that object's own reference (for example, the
-  directions of movement, or the skill list) and by the individual order's entry.
+- Parameters identify game objects. Most — entities, skills, things, directions
+  — are referred to by their number. A **province** is referred to by its id,
+  which is its coordinate in compact form, for example `(-1,0)` (see
+  [World Generation]({{< relref "/docs/reference/world-generation.md" >}})). Which
+  values are valid for a given parameter is defined by that object's own reference
+  (for example, the directions of movement, or the skill list) and by the
+  individual order's entry.
 - Some orders take an optional or a variable-length parameter list. `Move`, for
   example, takes a path of one or more direction numbers. The
   [command summary](#command-summary) marks required parameters with `< >`,
@@ -203,7 +206,7 @@ Conventions (the same notation as the
 | 10 | Buy           | `<thing> [from] <offer> [number]` | 7           |
 | 11 | Sell          | `<thing> [to] <price> [number]`   | 7           |
 | 18 | Pay           | `<entity> <money> <moneyLeft>`    | 0           |
-| 23 | Pillage / Tax | `<province> [severity]`           | 7           |
+| 23 | Pillage / Tax | `<provinceId> [severity]`         | 7           |
 
 ### Followers & social
 
@@ -220,7 +223,7 @@ Conventions (the same notation as the
 | ID | Command   | Parameters                       | Time (days) |
 |----|-----------|----------------------------------|-------------|
 | 24 | Execute   | `<captive>`                      | 28          |
-| 25 | Terrorize | `[province] [severity] [mode]`   | 7           |
+| 25 | Terrorize | `[provinceId] [severity] [mode]` | 7           |
 | 27 | Armor     | `[newRating]`                    | varies      |
 
 The ids `7`, `13`, `17`, and `22` are unused.
