@@ -299,6 +299,121 @@ func TestListOrdersTurnZeroGuard(t *testing.T) {
 	}
 }
 
+// reloadEntities reads and decodes the entities.json written under dir.
+func reloadEntities(t *testing.T, dir string) *tpty.EntityStore {
+	t.Helper()
+	buf, err := os.ReadFile(filepath.Join(dir, "entities.json"))
+	if err != nil {
+		t.Fatalf("read entities.json: %v", err)
+	}
+	var store tpty.EntityStore
+	if err := json.Unmarshal(buf, &store); err != nil {
+		t.Fatalf("decode entities.json: %v", err)
+	}
+	return &store
+}
+
+// TestProcessTurnHappyPath verifies that processing a turn with a submitted move
+// writes the result file, reports at least one executed (non-stub) order, and
+// updates the entity's location in the reloaded entities.json.
+func TestProcessTurnHappyPath(t *testing.T) {
+	dir, player := setupSubmitGame(t, 1)
+
+	// The seeded entity 1 starts at the player's starting province (1,-1). A
+	// one-step move north (direction 1 = (0,-1)) takes it to (1,-2).
+	raw := "\"test-game\" " + strconv.Itoa(player.ID) + " \"" + player.Password + "\"\n\nentity 1, \"Entity 1\"\n    move 1\n"
+	orderFile := filepath.Join(dir, "alice-orders.txt")
+	if err := os.WriteFile(orderFile, []byte(raw), 0o644); err != nil {
+		t.Fatalf("write order file: %v", err)
+	}
+	if _, _, err := captureErr(t, func() error { return submitOrders(dir, orderFile) }); err != nil {
+		t.Fatalf("submitOrders = %v, want nil", err)
+	}
+
+	stdout, _, err := captureErr(t, func() error { return processTurn(dir) })
+	if err != nil {
+		t.Fatalf("processTurn = %v, want nil", err)
+	}
+
+	// The result file marks the turn processed.
+	resultPath := tpty.TurnResultPath(filepath.Join(dir, "turns"), 1)
+	if _, statErr := os.Stat(resultPath); statErr != nil {
+		t.Errorf("result file %s not written: %v", resultPath, statErr)
+	}
+	// The summary reports at least one executed (non-stub) order.
+	if !strings.Contains(stdout, "1 executed") {
+		t.Errorf("stdout = %q, want it to report 1 executed order", stdout)
+	}
+
+	// The move actually updated the entity's location in the store.
+	store := reloadEntities(t, dir)
+	e, ok := store.ByID(1)
+	if !ok {
+		t.Fatal("entity 1 missing from reloaded entities.json")
+	}
+	if e.Location != "(1,-2)" {
+		t.Errorf("entity 1 Location = %q, want %q", e.Location, "(1,-2)")
+	}
+}
+
+// TestProcessTurnTurnZeroGuard verifies that a game at turn 0 refuses to process
+// and writes no result.
+func TestProcessTurnTurnZeroGuard(t *testing.T) {
+	dir, _ := setupSubmitGame(t, 0)
+
+	_, _, err := captureErr(t, func() error { return processTurn(dir) })
+	if err == nil {
+		t.Fatal("processTurn at turn 0 = nil error, want an error")
+	}
+	if !strings.Contains(err.Error(), "turn") || !strings.Contains(err.Error(), "play") {
+		t.Errorf("turn-0 error = %q, want it to mention the turn and play", err.Error())
+	}
+	if _, statErr := os.Stat(tpty.TurnResultPath(filepath.Join(dir, "turns"), 0)); statErr == nil {
+		t.Error("a result file was written despite the turn-0 guard")
+	}
+}
+
+// TestProcessTurnNoOrdersGuard verifies that processing a turn with no collected
+// orders is refused with a clear message.
+func TestProcessTurnNoOrdersGuard(t *testing.T) {
+	dir, _ := setupSubmitGame(t, 1)
+
+	_, _, err := captureErr(t, func() error { return processTurn(dir) })
+	if err == nil {
+		t.Fatal("processTurn with no orders = nil error, want an error")
+	}
+	if !strings.Contains(err.Error(), "no orders collected for turn 1") {
+		t.Errorf("no-orders error = %q, want it to say 'no orders collected for turn 1'", err.Error())
+	}
+}
+
+// TestProcessTurnDoubleProcessGuard verifies that processing an already-processed
+// turn is refused.
+func TestProcessTurnDoubleProcessGuard(t *testing.T) {
+	dir, player := setupSubmitGame(t, 1)
+
+	raw := "\"test-game\" " + strconv.Itoa(player.ID) + " \"" + player.Password + "\"\n\nentity 1, \"Entity 1\"\n    hold\n"
+	orderFile := filepath.Join(dir, "alice-orders.txt")
+	if err := os.WriteFile(orderFile, []byte(raw), 0o644); err != nil {
+		t.Fatalf("write order file: %v", err)
+	}
+	if _, _, err := captureErr(t, func() error { return submitOrders(dir, orderFile) }); err != nil {
+		t.Fatalf("submitOrders = %v, want nil", err)
+	}
+
+	if _, _, err := captureErr(t, func() error { return processTurn(dir) }); err != nil {
+		t.Fatalf("first processTurn = %v, want nil", err)
+	}
+
+	_, _, err := captureErr(t, func() error { return processTurn(dir) })
+	if err == nil {
+		t.Fatal("second processTurn = nil error, want an error")
+	}
+	if !strings.Contains(err.Error(), "already processed") {
+		t.Errorf("double-process error = %q, want it to say 'already processed'", err.Error())
+	}
+}
+
 // TestLoadFactionsMissingFile verifies that an absent factions file yields an
 // empty, non-nil store and no error.
 func TestLoadFactionsMissingFile(t *testing.T) {

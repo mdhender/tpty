@@ -69,6 +69,8 @@ func main() {
 //	│   ├── remove
 //	│   ├── reset-password
 //	│   └── show
+//	├── turn
+//	│   └── process
 //	└── world
 //	    ├── generate
 //	    ├── render
@@ -107,6 +109,7 @@ func newRootCommand() *ff.Command {
 		newGameCommand(rootFlags, data),
 		newOrdersCommand(rootFlags, data),
 		newPlayerCommand(rootFlags, data),
+		newTurnCommand(rootFlags, data),
 		newWorldCommand(rootFlags, data),
 	}
 	return root
@@ -436,6 +439,148 @@ func submitOrders(data, file string) error {
 		fmt.Printf("replaced previous submission\n")
 	}
 	fmt.Printf("wrote %s\n", path)
+	return nil
+}
+
+// newTurnCommand builds the "turn" resource command and its subcommands.
+func newTurnCommand(parent *ff.FlagSet, data *string) *ff.Command {
+	turnFlags := ff.NewFlagSet("turn").SetParent(parent)
+
+	cmd := &ff.Command{
+		Name:      "turn",
+		Usage:     "tpty turn [FLAGS] SUBCOMMAND ...",
+		ShortHelp: "process and advance turns",
+		Flags:     turnFlags,
+		Exec: func(ctx context.Context, args []string) error {
+			// No subcommand selected; show help.
+			return ff.ErrHelp
+		},
+	}
+
+	cmd.Subcommands = []*ff.Command{
+		newTurnProcessCommand(turnFlags, data),
+	}
+	return cmd
+}
+
+// newTurnProcessCommand builds the "turn process" command, which runs the
+// turn-execution engine over the current turn's submitted orders, enforces the
+// turn guards, and persists the results. It does not advance the turn.
+//
+// See content/docs/reference/turns.md ("Per-turn lifecycle") and
+// content/docs/reference/turn-processing.md.
+func newTurnProcessCommand(parent *ff.FlagSet, data *string) *ff.Command {
+	fs := ff.NewFlagSet("process").SetParent(parent)
+
+	return &ff.Command{
+		Name:      "process",
+		Usage:     "tpty turn process [FLAGS]",
+		ShortHelp: "process the current turn's orders and persist the results",
+		Flags:     fs,
+		Exec: func(ctx context.Context, args []string) error {
+			if len(args) > 0 {
+				return fmt.Errorf("unexpected argument %q: this command takes flags only, no positional arguments", args[0])
+			}
+			if *data == "" {
+				return fmt.Errorf("--data is required")
+			}
+			return processTurn(*data)
+		},
+	}
+}
+
+// processTurn runs the turn-execution engine over the game's current turn. It
+// loads the game and the current turn's submitted orders, enforces the three
+// guards (turn 0 has no play; there must be orders to process; a turn is
+// processed at most once), carries in the previous turn's unfinished order
+// queues, runs tpty.ProcessTurn with the default dispatch, and persists the
+// mutated entities file and this turn's TurnResult. The result file's existence
+// is the "already processed" marker. The current turn is not advanced —
+// advancing to turn N+1 is a separate command.
+//
+// See content/docs/reference/turns.md ("Per-turn lifecycle", the guards) and
+// content/docs/reference/turn-processing.md.
+func processTurn(data string) error {
+	game, files, err := loadGame(data)
+	if err != nil {
+		return err
+	}
+
+	// Guard — turn 0 is setup and has no play. Match "orders submit"/"orders
+	// list", which likewise refuse at turn 0.
+	if game.Turn < 1 {
+		return fmt.Errorf("the game is at turn 0 (setup); turns are processed once play begins at turn 1")
+	}
+
+	// Guard — there must be orders to process. A missing turn directory yields an
+	// empty slice, so this also catches "nobody has submitted yet".
+	subs, err := tpty.LoadTurnOrders(files.Orders, game.Turn)
+	if err != nil {
+		return fmt.Errorf("load submitted orders: %w", err)
+	}
+	if len(subs) == 0 {
+		return fmt.Errorf("no orders collected for turn %d", game.Turn)
+	}
+
+	// Guard — a turn is processed at most once. The result file's existence marks
+	// the turn as already processed (double-processing is an error; there is no
+	// --force in this pass).
+	if _, statErr := os.Stat(tpty.TurnResultPath(files.Turns, game.Turn)); statErr == nil {
+		return fmt.Errorf("turn %d already processed", game.Turn)
+	} else if !errors.Is(statErr, os.ErrNotExist) {
+		return fmt.Errorf("stat turn result: %w", statErr)
+	}
+
+	factions, err := loadFactions(files.Factions)
+	if err != nil {
+		return err
+	}
+	entities, err := loadEntities(files.Entities)
+	if err != nil {
+		return err
+	}
+
+	// Carry in the previous turn's unfinished order queues, if that turn was
+	// processed. The first processed turn has none.
+	var carryover []tpty.EntityQueue
+	if prev, prevErr := tpty.LoadTurnResult(files.Turns, game.Turn-1); prevErr == nil {
+		carryover = prev.Carryover
+	} else if !errors.Is(prevErr, tpty.ErrTurnNotProcessed) {
+		return fmt.Errorf("load previous turn carryover: %w", prevErr)
+	}
+
+	result := tpty.ProcessTurn(tpty.TurnInput{
+		State:     tpty.GameState{Game: game, Entities: entities, Factions: factions},
+		Turn:      game.Turn,
+		Submitted: subs,
+		Carryover: carryover,
+		Dispatch:  tpty.NewDispatch(),
+	})
+
+	// Persist the mutated entities (Move updates locations in the store) and the
+	// turn result. The turn is NOT advanced.
+	if err := writeJSON(files.Entities, entities); err != nil {
+		return fmt.Errorf("write entities: %w", err)
+	}
+	if err := tpty.SaveTurnResult(files.Turns, result); err != nil {
+		return fmt.Errorf("write turn result: %w", err)
+	}
+
+	executed, stubbed := 0, 0
+	for _, o := range result.Outcomes {
+		if o.Stub {
+			stubbed++
+		} else {
+			executed++
+		}
+	}
+
+	resultPath := tpty.TurnResultPath(files.Turns, game.Turn)
+	fmt.Printf("processed turn %d of game %q\n", game.Turn, game.ID)
+	fmt.Printf("  %d submission(s), %d order outcome(s): %d executed, %d stubbed\n",
+		len(subs), len(result.Outcomes), executed, stubbed)
+	fmt.Printf("  %d carryover queue(s) for turn %d\n", len(result.Carryover), game.Turn+1)
+	fmt.Printf("wrote %s\n", resultPath)
 	return nil
 }
 

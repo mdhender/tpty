@@ -49,6 +49,7 @@ seeds, and current turn, and maps each of the game's data files to a location:
     "factions": "./factions.json",
     "entities": "./entities.json",
     "orders": "./orders",
+    "turns": "./turns",
     "starting-provinces": "./starting-provinces.json",
     "terrain-translation": "./terrain-translation.json"
   }
@@ -63,6 +64,10 @@ seeds, and current turn, and maps each of the game's data files to a location:
 
 A player's submitted orders are stored under the `orders` directory, one file
 per turn per player, keyed by turn and player id.
+
+The result of processing a turn is stored under the `turns` directory, one
+subdirectory per turn (keyed by turn), holding that turn's processing output.
+See [Turn Processing]({{< relref "/docs/reference/turn-processing.md" >}}).
 
 ## Seeds and subsystems
 

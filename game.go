@@ -34,9 +34,15 @@ type GameFiles struct {
 	Factions           string `json:"factions"`
 	Entities           string `json:"entities"`
 	Orders             string `json:"orders"`
+	Turns              string `json:"turns"`
 	StartingProvinces  string `json:"starting-provinces"`
 	TerrainTranslation string `json:"terrain-translation"`
 }
+
+// defaultTurnsDir is the fallback location of the per-turn processing output
+// directory, used when a manifest omits the field (an older game.json predating
+// the turns directory resolves it to "").
+const defaultTurnsDir = "./turns"
 
 // ErrInvalidGameID is returned when a game id is empty or contains a character
 // that is not allowed.
@@ -51,6 +57,7 @@ func DefaultGameFiles() GameFiles {
 		Factions:           "./factions.json",
 		Entities:           "./entities.json",
 		Orders:             "./orders",
+		Turns:              defaultTurnsDir,
 		StartingProvinces:  "./starting-provinces.json",
 		TerrainTranslation: "./terrain-translation.json",
 	}
@@ -91,12 +98,20 @@ func (f GameFiles) Resolve(baseDir string) GameFiles {
 		}
 		return filepath.Join(baseDir, p)
 	}
+	// An older game.json predating the turns directory has no "turns" field, so
+	// it decodes to "". Fall back to the default at resolve time so pre-existing
+	// manifests still work.
+	turns := f.Turns
+	if turns == "" {
+		turns = defaultTurnsDir
+	}
 	return GameFiles{
 		World:              resolve(f.World),
 		Players:            resolve(f.Players),
 		Factions:           resolve(f.Factions),
 		Entities:           resolve(f.Entities),
 		Orders:             resolve(f.Orders),
+		Turns:              resolve(turns),
 		StartingProvinces:  resolve(f.StartingProvinces),
 		TerrainTranslation: resolve(f.TerrainTranslation),
 	}
