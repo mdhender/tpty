@@ -19,6 +19,7 @@ reviewed and moved here.
   {{< card link="hex-geometry" title="Hex Geometry" subtitle="The apothem and the hex measurements derived from it" >}}
   {{< card link="players" title="Players" subtitle="Players in a game: identity, starting province, and order password" >}}
   {{< card link="factions" title="Factions" subtitle="Groups of entities under one controller — a player or an NPC" >}}
+  {{< card link="entities" title="Entities" subtitle="Actors in the world: identity, owning faction, and location" >}}
   {{< card link="orders" title="Orders" subtitle="The orders file format, authentication, and the command summary for every order" >}}
   {{< card link="glossary" title="Glossary" subtitle="Terms used across the reference" >}}
 {{< /cards >}}
