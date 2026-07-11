@@ -106,6 +106,9 @@ whitespace:
 Use spaces to separate fields; do not use tab characters. Spacing is otherwise
 at the writer's discretion.
 
+See the [Grammar]({{< relref "/docs/reference/orders/grammar.md" >}}) for a
+compact per-order statement of each command word and its parameters.
+
 ## Authentication
 
 The opening record authenticates the whole file. The engine validates it against
