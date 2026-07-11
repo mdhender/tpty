@@ -35,10 +35,10 @@ pay <entity> <money> <moneyLeft>
 declare [entity] <opinion>
 recruit <numberSought> <payOffered>
 form <armor> [speciesHired] [amount] [numOrders]
-pillage <province> [severity]
-tax <province> [severity]
+pillage <provinceId> [severity]
+tax <provinceId> [severity]
 execute <captive>
-terrorize [province] [severity] [mode]
+terrorize [provinceId] [severity] [mode]
 wait [days]
 armor [newRating]
 tell [entity] <yesNoNumber> [number]
