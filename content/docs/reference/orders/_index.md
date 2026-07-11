@@ -101,7 +101,9 @@ whitespace:
   directions of movement, or the skill list) and by the individual order's entry.
 - Some orders take an optional or a variable-length parameter list. `Move`, for
   example, takes a path of one or more direction numbers. The
-  [command summary](#command-summary) marks optional parameters with `[ ]`.
+  [command summary](#command-summary) marks required parameters with `< >`,
+  optional parameters with `[ ]`, and a repeated (one-or-more) parameter with a
+  trailing `…`.
 
 Use spaces to separate fields; do not use tab characters. Spacing is otherwise
 at the writer's discretion.
@@ -145,67 +147,69 @@ The tables below list every order, its parameters, and its base time cost in
 days. This is the parsing specification: it covers all orders. Detailed
 behaviour lives in each order's own entry, added as the order is implemented.
 
-Conventions:
+Conventions (the same notation as the
+[Grammar]({{< relref "/docs/reference/orders/grammar.md" >}})):
 
-- Parameters in `[ ]` are optional; a trailing `…` marks a variable-length list.
+- `<parameter>` is required; `[parameter]` is optional; a trailing `…` marks a
+  repeated (one-or-more) parameter.
 - `varies` means the time cost depends on the order's parameters or outcome; it
   is defined in the order's own entry.
 
 ### Movement & position
 
-| ID | Command  | Parameters       | Time (days) |
-|----|----------|------------------|-------------|
-| 0  | Hold     |                  | 7           |
-| 1  | Move     | Direction…       | varies      |
-| 2  | Attack   | [Direction…]     | varies      |
-| 14 | Explore  |                  | 7           |
-| 26 | Wait     | [Days]           | varies      |
-| 29 | Garrison | [State]          | 0           |
+| ID | Command  | Parameters        | Time (days) |
+|----|----------|-------------------|-------------|
+| 0  | Hold     |                   | 7           |
+| 1  | Move     | `<direction>…`    | varies      |
+| 2  | Attack   | `[direction]`     | varies      |
+| 14 | Explore  |                   | 7           |
+| 26 | Wait     | `[days]`          | varies      |
+| 29 | Garrison | `[state]`         | 0           |
 
 ### Stacks
 
-| ID | Command | Parameters    | Time (days) |
-|----|---------|---------------|-------------|
-| 4  | Take    | Unit          | 7           |
-| 5  | Drop    | [Unit]        | 0           |
-| 6  | Join    | Stack         | 0           |
-| 12 | Follow  | [Entity]      | 28          |
-| 16 | Swear   | [Lord-Entity] | 0           |
+| ID | Command | Parameters     | Time (days) |
+|----|---------|----------------|-------------|
+| 4  | Take    | `<unit>`       | 7           |
+| 5  | Drop    | `[unit]`       | 0           |
+| 6  | Join    | `<stack>`      | 0           |
+| 12 | Follow  | `[entity]`     | 28          |
+| 16 | Swear   | `[lordEntity]` | 0           |
 
 ### Skills & work
 
-| ID | Command | Parameters              | Time (days) |
-|----|---------|-------------------------|-------------|
-| 3  | Use     | [Skill] [Target] [Modifier] | varies  |
-| 8  | Study   | Skill [Days]            | varies      |
-| 9  | Work    | [Skill] [Options]       | 7           |
+| ID | Command | Parameters                      | Time (days) |
+|----|---------|---------------------------------|-------------|
+| 3  | Use     | `[skill] [target] [modifier]`   | varies      |
+| 8  | Study   | `<skill> [days]`                | varies      |
+| 9  | Work    | `[skill] [options]`             | 7           |
 
 ### Goods & money
 
-| ID | Command      | Parameters                | Time (days) |
-|----|--------------|---------------------------|-------------|
-| 10 | Buy          | Thing [From] Offer [Number] | 7         |
-| 11 | Sell         | Thing [To] Price [Number] | 7           |
-| 18 | Pay          | Entity Money MoneyLeft    | 0           |
-| 23 | Pillage / Tax | Province [Severity]      | 7           |
+| ID | Command       | Parameters                        | Time (days) |
+|----|---------------|-----------------------------------|-------------|
+| 10 | Buy           | `<thing> [from] <offer> [number]` | 7           |
+| 11 | Sell          | `<thing> [to] <price> [number]`   | 7           |
+| 18 | Pay           | `<entity> <money> <moneyLeft>`    | 0           |
+| 23 | Pillage / Tax | `<province> [severity]`           | 7           |
 
 ### Followers & social
 
-| ID | Command  | Parameters                        | Time (days) |
-|----|----------|-----------------------------------|-------------|
-| 15 | Persuade | Entity [Skill] [Bribe]            | 7           |
-| 19 | Declare  | [Entity] Opinion                  | 0           |
-| 20 | Recruit  | NumberSought PayOffered           | 14          |
-| 21 | Form     | Armor [SpeciesHired] [Amount] [NumOrders] | 0   |
-| 28 | Tell     | [Entity] Y/N/Number [Number]      | 0+          |
+| ID | Command  | Parameters                                    | Time (days) |
+|----|----------|-----------------------------------------------|-------------|
+| 15 | Persuade | `<entity> [skill] [bribe]`                    | 7           |
+| 19 | Declare  | `[entity] <opinion>`                          | 0           |
+| 20 | Recruit  | `<numberSought> <payOffered>`                 | 14          |
+| 21 | Form     | `<armor> [speciesHired] [amount] [numOrders]` | 0           |
+| 28 | Tell     | `[entity] <yesNoNumber> [number]`             | 0+          |
 
 ### Force & control
 
-| ID | Command   | Parameters                    | Time (days) |
-|----|-----------|-------------------------------|-------------|
-| 24 | Execute   | Captive                       | 28          |
-| 25 | Terrorize | [Province] [Severity] [Mode]  | 7           |
-| 27 | Armor     | [New Rating]                  | varies      |
+| ID | Command   | Parameters                       | Time (days) |
+|----|-----------|----------------------------------|-------------|
+| 24 | Execute   | `<captive>`                      | 28          |
+| 25 | Terrorize | `[province] [severity] [mode]`   | 7           |
+| 27 | Armor     | `[newRating]`                    | varies      |
 
 The ids `7`, `13`, `17`, and `22` are unused.
 

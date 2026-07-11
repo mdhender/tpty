@@ -12,12 +12,12 @@ Notation:
 
 - `<parameter>` is required.
 - `[parameter]` is optional.
-- `+` after a parameter means one or more, repeated (for example, `<direction>+`
+- `…` after a parameter means one or more, repeated (for example, `<direction>…`
   is a path of one or more directions).
 
 ```
 hold
-move <direction>+
+move <direction>…
 attack [direction]
 use [skill] [target] [modifier]
 take <unit>
