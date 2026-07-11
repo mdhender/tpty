@@ -14,6 +14,7 @@ reviewed and moved here.
 {{< cards >}}
   {{< card link="games" title="Games" subtitle="The top-level game, its master seeds, and the game.json manifest" >}}
   {{< card link="turns" title="Turns" subtitle="How a game advances: turn numbering and the per-turn lifecycle" >}}
+  {{< card link="turn-processing" title="Turn Processing" subtitle="How the engine processes a turn: the tick timeline, order queue, and scheduler" >}}
   {{< card link="world-generation" title="World Generation" subtitle="How the hex world is generated from the master seeds" >}}
   {{< card link="determinism" title="Determinism" subtitle="Master seeds, streams, and the key-path addressing that keeps a game reproducible" >}}
   {{< card link="hex-geometry" title="Hex Geometry" subtitle="The apothem and the hex measurements derived from it" >}}
