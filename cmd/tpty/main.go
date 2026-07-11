@@ -12,10 +12,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"text/tabwriter"
 
 	"github.com/mdhender/tpty"
 	"github.com/mdhender/tpty/internal/dotenv"
+	"github.com/mdhender/tpty/internal/orders"
 	"github.com/mdhender/tpty/internal/prng"
 	"github.com/mdhender/tpty/worldographer"
 	"github.com/peterbourgon/ff/v4"
@@ -57,6 +59,8 @@ func main() {
 //	tpty
 //	├── game
 //	│   └── create
+//	├── orders
+//	│   └── submit
 //	├── player
 //	│   ├── create
 //	│   ├── list
@@ -100,6 +104,7 @@ func newRootCommand() *ff.Command {
 
 	root.Subcommands = []*ff.Command{
 		newGameCommand(rootFlags, data),
+		newOrdersCommand(rootFlags, data),
 		newPlayerCommand(rootFlags, data),
 		newWorldCommand(rootFlags, data),
 	}
@@ -192,6 +197,155 @@ func createGame(data, id string, seeds prng.Seeds) error {
 	}
 
 	fmt.Printf("created game %q (seed1=%d seed2=%d)\n", id, seeds.Seed1, seeds.Seed2)
+	fmt.Printf("wrote %s\n", path)
+	return nil
+}
+
+// newOrdersCommand builds the "orders" resource command and its subcommands.
+func newOrdersCommand(parent *ff.FlagSet, data *string) *ff.Command {
+	ordersFlags := ff.NewFlagSet("orders").SetParent(parent)
+
+	cmd := &ff.Command{
+		Name:      "orders",
+		Usage:     "tpty orders [FLAGS] SUBCOMMAND ...",
+		ShortHelp: "submit and manage player orders",
+		Flags:     ordersFlags,
+		Exec: func(ctx context.Context, args []string) error {
+			// No subcommand selected; show help.
+			return ff.ErrHelp
+		},
+	}
+
+	cmd.Subcommands = []*ff.Command{
+		newOrdersSubmitCommand(ordersFlags, data),
+	}
+	return cmd
+}
+
+// newOrdersSubmitCommand builds the "orders submit" command, which ingests a
+// player's saved orders file into the current turn's order store.
+//
+// See the reference documentation at content/docs/reference/orders/_index.md.
+func newOrdersSubmitCommand(parent *ff.FlagSet, data *string) *ff.Command {
+	fs := ff.NewFlagSet("submit").SetParent(parent)
+	file := fs.StringLong("file", "", "`path` to the player's saved orders file to ingest")
+
+	return &ff.Command{
+		Name:      "submit",
+		Usage:     "tpty orders submit [FLAGS]",
+		ShortHelp: "submit a player's orders for the current turn",
+		Flags:     fs,
+		Exec: func(ctx context.Context, args []string) error {
+			if len(args) > 0 {
+				return fmt.Errorf("unexpected argument %q: this command takes flags only, no positional arguments", args[0])
+			}
+			if *data == "" {
+				return fmt.Errorf("--data is required")
+			}
+			if *file == "" {
+				return fmt.Errorf("--file is required")
+			}
+			return submitOrders(*data, *file)
+		},
+	}
+}
+
+// submitOrders ingests a player's saved orders file into the current turn's
+// order store. It parses the file, authenticates its opening record against the
+// game and its players, checks that each entity block names an entity the player
+// owns, and stores the raw submission verbatim under the game's orders directory.
+//
+// Authentication failure rejects the file in full and stores nothing (a non-zero
+// exit). When authentication succeeds the submission is accepted and stored even
+// if it carries warnings — parse errors and ownership problems are reported but
+// do not block acceptance; those orders simply will not be executed.
+//
+// See content/docs/reference/orders/_index.md, "Authentication", "Ownership",
+// and "Rejected orders".
+func submitOrders(data, file string) error {
+	game, files, err := loadGame(data)
+	if err != nil {
+		return err
+	}
+
+	// Orders are collected for the current turn; turn 0 is setup and has no play.
+	if game.Turn < 1 {
+		return fmt.Errorf("the game is at turn 0 (setup); orders are collected once play begins at turn 1")
+	}
+
+	buf, err := os.ReadFile(file)
+	if err != nil {
+		return fmt.Errorf("read orders file %s: %w", file, err)
+	}
+
+	f, parseErrs := orders.Parse(string(buf))
+
+	store, err := loadPlayers(files.Players)
+	if err != nil {
+		return err
+	}
+
+	player, err := game.AuthenticateOrders(f, store)
+	if err != nil {
+		// A malformed opening record is the most likely cause of an authentication
+		// failure with no parsed opening; surface the parse errors that explain it.
+		if f.Opening == nil && len(parseErrs) > 0 {
+			for _, pe := range parseErrs {
+				fmt.Printf("  %s\n", pe.Error())
+			}
+		}
+		return fmt.Errorf("orders rejected: %w", err)
+	}
+
+	factions, err := loadFactions(files.Factions)
+	if err != nil {
+		return err
+	}
+	entities, err := loadEntities(files.Entities)
+	if err != nil {
+		return err
+	}
+
+	ownErrs := tpty.CheckOrderOwnership(f, player.ID, factions, entities)
+
+	path := tpty.PlayerOrdersPath(files.Orders, game.Turn, player.ID)
+	_, statErr := os.Stat(path)
+	replaced := statErr == nil
+
+	stored := tpty.StoredOrders{Turn: game.Turn, PlayerID: player.ID, Raw: string(buf)}
+	if err := writeJSON(path, stored); err != nil {
+		return fmt.Errorf("write orders: %w", err)
+	}
+
+	totalOrders := 0
+	for _, block := range f.Entities {
+		totalOrders += len(block.Orders)
+	}
+
+	fmt.Printf("accepted orders for player %d (%q) in game %q, turn %d\n", player.ID, player.Handle, game.ID, game.Turn)
+	fmt.Printf("  parsed %d entity block(s), %d order(s)\n", len(f.Entities), totalOrders)
+
+	// Combine parse and ownership problems into one list, sorted by position.
+	// These orders will not be executed, but the rest of the submission stands.
+	warnings := make([]orders.Error, 0, len(parseErrs)+len(ownErrs))
+	warnings = append(warnings, parseErrs...)
+	warnings = append(warnings, ownErrs...)
+	sort.SliceStable(warnings, func(i, j int) bool {
+		if warnings[i].Line != warnings[j].Line {
+			return warnings[i].Line < warnings[j].Line
+		}
+		return warnings[i].Col < warnings[j].Col
+	})
+	if len(warnings) > 0 {
+		fmt.Printf("warnings (%d): the following will not be executed; the rest is accepted\n", len(warnings))
+		for _, w := range warnings {
+			fmt.Printf("  %s\n", w.Error())
+		}
+	}
+
+	if replaced {
+		fmt.Printf("replaced previous submission\n")
+	}
 	fmt.Printf("wrote %s\n", path)
 	return nil
 }
@@ -1102,6 +1256,40 @@ func loadPlayers(path string) (*tpty.PlayerStore, error) {
 		return nil, fmt.Errorf("read players: %w", err)
 	}
 	var store tpty.PlayerStore
+	if err := json.Unmarshal(buf, &store); err != nil {
+		return nil, fmt.Errorf("parse %s: %w", path, err)
+	}
+	return &store, nil
+}
+
+// loadFactions reads the factions file at path into a store. A missing file
+// yields a new, empty store, so ownership checks work before any faction exists.
+func loadFactions(path string) (*tpty.FactionStore, error) {
+	buf, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return tpty.NewFactionStore(), nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read factions: %w", err)
+	}
+	var store tpty.FactionStore
+	if err := json.Unmarshal(buf, &store); err != nil {
+		return nil, fmt.Errorf("parse %s: %w", path, err)
+	}
+	return &store, nil
+}
+
+// loadEntities reads the entities file at path into a store. A missing file
+// yields a new, empty store, so ownership checks work before any entity exists.
+func loadEntities(path string) (*tpty.EntityStore, error) {
+	buf, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return tpty.NewEntityStore(), nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read entities: %w", err)
+	}
+	var store tpty.EntityStore
 	if err := json.Unmarshal(buf, &store); err != nil {
 		return nil, fmt.Errorf("parse %s: %w", path, err)
 	}

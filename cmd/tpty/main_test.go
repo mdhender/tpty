@@ -5,9 +5,11 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -80,6 +82,187 @@ func TestLoadStartingProvincesErrors(t *testing.T) {
 				t.Errorf("loadStartingProvinces(%q) error = nil, want an error", content)
 			}
 		})
+	}
+}
+
+// setupSubmitGame builds a data directory holding a game at the given turn, one
+// player, and the turn-1 seeded faction and entity for that player, then writes
+// the players, factions, and entities files. It returns the data directory and
+// the created player (whose Password is needed to build a valid opening record).
+func setupSubmitGame(t *testing.T, turn int) (dir string, player tpty.Player) {
+	t.Helper()
+	dir = t.TempDir()
+
+	seeds := prng.Seeds{Seed1: 1, Seed2: 2}
+	game, err := tpty.NewGame("test-game", seeds)
+	if err != nil {
+		t.Fatalf("NewGame: %v", err)
+	}
+	game.Turn = turn
+	if err := writeJSON(filepath.Join(dir, "game.json"), game); err != nil {
+		t.Fatalf("write game.json: %v", err)
+	}
+
+	players := tpty.NewPlayerStore()
+	player, err = players.Create(seeds, "a@x.com", "alice", "(1,-1)")
+	if err != nil {
+		t.Fatalf("create player: %v", err)
+	}
+
+	factions := tpty.NewFactionStore()
+	entities := tpty.NewEntityStore()
+	if _, err := tpty.SeedTurnOne(players, factions, entities); err != nil {
+		t.Fatalf("SeedTurnOne: %v", err)
+	}
+
+	if err := writeJSON(filepath.Join(dir, "players.json"), players); err != nil {
+		t.Fatalf("write players.json: %v", err)
+	}
+	if err := writeJSON(filepath.Join(dir, "factions.json"), factions); err != nil {
+		t.Fatalf("write factions.json: %v", err)
+	}
+	if err := writeJSON(filepath.Join(dir, "entities.json"), entities); err != nil {
+		t.Fatalf("write entities.json: %v", err)
+	}
+	return dir, player
+}
+
+// TestSubmitOrdersAccepted verifies that a valid submission is stored verbatim
+// under the orders directory, keyed by turn and player id.
+func TestSubmitOrdersAccepted(t *testing.T) {
+	dir, player := setupSubmitGame(t, 1)
+	raw := "\"test-game\" " + strconv.Itoa(player.ID) + " \"" + player.Password + "\"\n\nentity 1, \"Entity 1\"\n    hold\n"
+	orderFile := filepath.Join(dir, "alice-orders.txt")
+	if err := os.WriteFile(orderFile, []byte(raw), 0o644); err != nil {
+		t.Fatalf("write order file: %v", err)
+	}
+
+	if _, _, err := captureErr(t, func() error { return submitOrders(dir, orderFile) }); err != nil {
+		t.Fatalf("submitOrders = %v, want nil", err)
+	}
+
+	path := tpty.PlayerOrdersPath(filepath.Join(dir, "orders"), 1, player.ID)
+	buf, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read stored orders: %v", err)
+	}
+	var stored tpty.StoredOrders
+	if err := json.Unmarshal(buf, &stored); err != nil {
+		t.Fatalf("decode stored orders: %v", err)
+	}
+	if stored.Raw != raw {
+		t.Errorf("stored Raw = %q, want %q", stored.Raw, raw)
+	}
+	if stored.Turn != 1 {
+		t.Errorf("stored Turn = %d, want 1", stored.Turn)
+	}
+	if stored.PlayerID != player.ID {
+		t.Errorf("stored PlayerID = %d, want %d", stored.PlayerID, player.ID)
+	}
+}
+
+// TestSubmitOrdersAuthFailureRejects verifies that a wrong password rejects the
+// file in full: a non-nil error wrapping ErrOrdersBadPassword and nothing stored.
+func TestSubmitOrdersAuthFailureRejects(t *testing.T) {
+	dir, player := setupSubmitGame(t, 1)
+	raw := "\"test-game\" " + strconv.Itoa(player.ID) + " \"wrong-password\"\n\nentity 1, \"Entity 1\"\n    hold\n"
+	orderFile := filepath.Join(dir, "alice-orders.txt")
+	if err := os.WriteFile(orderFile, []byte(raw), 0o644); err != nil {
+		t.Fatalf("write order file: %v", err)
+	}
+
+	_, _, err := captureErr(t, func() error { return submitOrders(dir, orderFile) })
+	if err == nil {
+		t.Fatal("submitOrders with wrong password = nil error, want an error")
+	}
+	if !errors.Is(err, tpty.ErrOrdersBadPassword) {
+		t.Errorf("submitOrders error = %v, want it to wrap ErrOrdersBadPassword", err)
+	}
+
+	path := tpty.PlayerOrdersPath(filepath.Join(dir, "orders"), 1, player.ID)
+	if _, statErr := os.Stat(path); statErr == nil {
+		t.Error("orders were stored despite the authentication failure")
+	}
+}
+
+// TestSubmitOrdersTurnZeroGuard verifies that a game at turn 0 refuses to accept
+// orders and stores nothing.
+func TestSubmitOrdersTurnZeroGuard(t *testing.T) {
+	dir, player := setupSubmitGame(t, 0)
+	raw := "\"test-game\" " + strconv.Itoa(player.ID) + " \"" + player.Password + "\"\n\nentity 1, \"Entity 1\"\n    hold\n"
+	orderFile := filepath.Join(dir, "alice-orders.txt")
+	if err := os.WriteFile(orderFile, []byte(raw), 0o644); err != nil {
+		t.Fatalf("write order file: %v", err)
+	}
+
+	_, _, err := captureErr(t, func() error { return submitOrders(dir, orderFile) })
+	if err == nil {
+		t.Fatal("submitOrders at turn 0 = nil error, want an error")
+	}
+	if !strings.Contains(err.Error(), "turn") || !strings.Contains(err.Error(), "play") {
+		t.Errorf("turn-0 error = %q, want it to mention the turn and play", err.Error())
+	}
+	path := tpty.PlayerOrdersPath(filepath.Join(dir, "orders"), 0, player.ID)
+	if _, statErr := os.Stat(path); statErr == nil {
+		t.Error("orders were stored despite the turn-0 guard")
+	}
+}
+
+// TestSubmitOrdersWarningsButAccepted verifies that a submission with an unknown
+// command and a block for an entity the player does not own is still accepted and
+// stored, with the problems reported as warnings.
+func TestSubmitOrdersWarningsButAccepted(t *testing.T) {
+	dir, player := setupSubmitGame(t, 1)
+	// entity 1 is owned (a bogus command warns); entity 99 does not exist (an
+	// ownership warning).
+	raw := "\"test-game\" " + strconv.Itoa(player.ID) + " \"" + player.Password + "\"\n\n" +
+		"entity 1, \"Entity 1\"\n    bogus 1 2\n\n" +
+		"entity 99, \"Ghost\"\n    hold\n"
+	orderFile := filepath.Join(dir, "alice-orders.txt")
+	if err := os.WriteFile(orderFile, []byte(raw), 0o644); err != nil {
+		t.Fatalf("write order file: %v", err)
+	}
+
+	stdout, _, err := captureErr(t, func() error { return submitOrders(dir, orderFile) })
+	if err != nil {
+		t.Fatalf("submitOrders with warnings = %v, want nil", err)
+	}
+	if !strings.Contains(stdout, "warnings") {
+		t.Errorf("stdout = %q, want it to report warnings", stdout)
+	}
+
+	path := tpty.PlayerOrdersPath(filepath.Join(dir, "orders"), 1, player.ID)
+	if _, statErr := os.Stat(path); statErr != nil {
+		t.Errorf("orders were not stored despite acceptance: %v", statErr)
+	}
+}
+
+// TestLoadFactionsMissingFile verifies that an absent factions file yields an
+// empty, non-nil store and no error.
+func TestLoadFactionsMissingFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "does-not-exist.json")
+	store, err := loadFactions(path)
+	if err != nil {
+		t.Fatalf("loadFactions(missing) error = %v, want nil", err)
+	}
+	if store == nil {
+		t.Fatal("loadFactions(missing) store = nil, want empty non-nil store")
+	}
+	if len(store.Factions) != 0 {
+		t.Errorf("loadFactions(missing) has %d factions, want 0", len(store.Factions))
+	}
+}
+
+// TestLoadEntitiesMissingFile verifies that an absent entities file yields an
+// empty, non-nil store and no error.
+func TestLoadEntitiesMissingFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "does-not-exist.json")
+	store, err := loadEntities(path)
+	if err != nil {
+		t.Fatalf("loadEntities(missing) error = %v, want nil", err)
+	}
+	if store == nil {
+		t.Fatal("loadEntities(missing) store = nil, want empty non-nil store")
 	}
 }
 
