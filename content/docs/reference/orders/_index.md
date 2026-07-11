@@ -156,6 +156,11 @@ Every order in the file is parsed and validated regardless of whether the engine
 can yet execute it: an order that parses successfully is accepted even when its
 effect is not yet implemented.
 
+The [Parsing]({{< relref "/docs/reference/orders/parsing.md" >}}) reference is the
+authoritative contract for how the parser reports these problems — the error
+format, how it recovers and reports several problems at once, and which failures
+reject the whole file versus which are reported per order.
+
 ## Command summary
 
 The tables below list every order, its parameters, and its base time cost in
