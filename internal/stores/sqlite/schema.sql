@@ -29,7 +29,7 @@
 -- global (not game-scoped) and seeded once. code matches the engine's Terrain
 -- enum (Mountain=0 .. Badlands=6) and must never be renumbered.
 CREATE TABLE terrains (
-    code               INTEGER PRIMARY KEY,   -- 0..6, matches Terrain enum
+    code               INTEGER PRIMARY KEY CHECK (code BETWEEN 0 AND 6), -- matches Terrain enum
     name               TEXT NOT NULL UNIQUE,  -- "Mountain", "Plains", ...
     worldographer_tile TEXT NOT NULL          -- for terrain-translation export
 );
@@ -47,7 +47,7 @@ CREATE TABLE terrains (
 CREATE TABLE accounts (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     email         TEXT NOT NULL UNIQUE,                    -- lowercased before saving
-    display_name  TEXT NOT NULL DEFAULT '',               -- how the person wants to be addressed
+    display_name  TEXT NOT NULL DEFAULT '',                -- how the person wants to be addressed
     password_hash TEXT NOT NULL DEFAULT '*',               -- '*' is not a valid hash, so it fails every login
     inactive      INTEGER NOT NULL DEFAULT 0 CHECK (inactive IN (0, 1)),
     is_admin      INTEGER NOT NULL DEFAULT 0 CHECK (is_admin IN (0, 1)),
@@ -65,7 +65,7 @@ CREATE TABLE accounts (
 -- Unix seconds (UTC).
 CREATE TABLE sessions (
     id         TEXT NOT NULL PRIMARY KEY,                -- opaque public session id
-    account_id INTEGER NOT NULL REFERENCES accounts(id), -- the effective identity
+    account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE, -- the effective identity
     token      TEXT NOT NULL UNIQUE,                     -- hex-encoded random bearer token (stored as-is)
     issued_at  INTEGER NOT NULL,                         -- Unix seconds (UTC)
     expires_at INTEGER NOT NULL,                         -- Unix seconds (UTC)
@@ -140,7 +140,7 @@ CREATE TABLE game_engine_state (
 -- worlds is the one generated world per game. Its seeds are derived from the
 -- game's master seeds (TagWorldSeeds). See world-generation.md.
 CREATE TABLE worlds (
-    game_id INTEGER PRIMARY KEY REFERENCES games(id) ON DELETE CASCADE,
+    game_id INTEGER NOT NULL PRIMARY KEY REFERENCES games(id) ON DELETE CASCADE,
     seed1   INTEGER NOT NULL,             -- world's derived seeds
     seed2   INTEGER NOT NULL,
     rings   INTEGER NOT NULL CHECK (rings > 0 AND rings < 100)
@@ -190,7 +190,7 @@ CREATE TABLE players (
     password     TEXT NOT NULL,               -- plaintext shared secret
     seed1        INTEGER NOT NULL,            -- player's private seeds
     seed2        INTEGER NOT NULL,
-    inactive     INTEGER NOT NULL DEFAULT 0,  -- 0 = active, 1 = removed
+    inactive     INTEGER NOT NULL DEFAULT 0 CHECK (inactive IN (0, 1)),  -- 0 = active, 1 = removed
     UNIQUE (game_id, display_name),
     UNIQUE (game_id, id),                                          -- FK target for order_submissions
     FOREIGN KEY (game_id, id) REFERENCES memberships(game_id, id)  -- id = membership id, same game
@@ -229,6 +229,12 @@ CREATE TABLE entities (
     loc_r        INTEGER NOT NULL,
     FOREIGN KEY (game_id, faction_id) REFERENCES factions(game_id, id)
 );
+
+-- entities has no game_id in its primary key (id is a rowid alias) and no
+-- UNIQUE(game_id, ...) to piggyback on, so per-game and per-faction lookups would
+-- otherwise full-scan. Index (game_id, faction_id): the leading column serves
+-- "entities of a game", the pair serves "entities of a faction".
+CREATE INDEX entities_by_game ON entities(game_id, faction_id);
 
 -- ---------------------------------------------------------------------------
 -- Orders: raw submissions + normalized parse tree
@@ -300,7 +306,7 @@ CREATE TABLE turn_outcomes (
     command_id INTEGER NOT NULL,
     word       TEXT NOT NULL,
     args_text  TEXT NOT NULL,             -- denormalized args
-    stub       INTEGER NOT NULL,          -- 0/1: handled by no-op stub
+    stub       INTEGER NOT NULL CHECK (stub IN (0, 1)),   -- handled by no-op stub
     message    TEXT NOT NULL,
     PRIMARY KEY (game_id, turn, seq),
     FOREIGN KEY (game_id, turn)
@@ -313,7 +319,7 @@ CREATE TABLE turn_carryover (
     game_id    INTEGER NOT NULL,
     turn       INTEGER NOT NULL,
     entity_id  INTEGER NOT NULL,
-    active     INTEGER NOT NULL,          -- 0/1: front order activated?
+    active     INTEGER NOT NULL CHECK (active IN (0, 1)),  -- front order activated?
     ticks_left INTEGER NOT NULL,          -- remaining ticks on the front order
     PRIMARY KEY (game_id, turn, entity_id),
     FOREIGN KEY (game_id, turn)

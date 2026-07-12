@@ -55,7 +55,7 @@ player's private seeds).
 
 A boolean is an `INTEGER` that is `NOT NULL` and constrained to `0` (false) or
 `1` (true) with `CHECK (col IN (0, 1))`. Examples: `accounts.is_admin`,
-`memberships.is_gm`, `turn_carryover.active`.
+`memberships.is_gm`, `players.inactive`.
 
 ### Timestamps
 
@@ -137,6 +137,18 @@ This guards three relationships:
 In each case the parent (`memberships`, `factions`, `players`) carries the
 redundant `UNIQUE (game_id, id)`.
 
+{{< callout type="info" >}}
+These composite foreign keys use the default `NO ACTION`, yet both the parent and
+the child are independently `ON DELETE CASCADE` children of `games`. Deleting a
+game therefore leans on SQLite processing those cascades in an order that clears
+each child before its `NO ACTION` parent. It does: a `DELETE FROM games` tears
+down every game-scoped table cleanly, while a *direct* delete of a still-referenced
+parent (e.g. a `memberships` row that a `players` row points at) is still correctly
+blocked. Because full-game teardown depends on this cascade behaviour rather than
+an explicit `ON DELETE` action on these three foreign keys, the store layer should
+guard it with a full-game-teardown regression test.
+{{< /callout >}}
+
 ## Global / static tables
 
 The migration version is not stored in a table: it is SQLite's `user_version`
@@ -149,8 +161,8 @@ The frozen [terrain]({{< relref "/docs/reference/world-generation.md" >}}) enum
 and its Worldographer tile mapping. It is global (not game-scoped) and seeded
 once.
 
-- `code` — `PRIMARY KEY`, `0`–`6`, matching the engine's terrain enum
-  (`Mountain = 0` … `Badlands = 6`). **Never renumbered.**
+- `code` — `PRIMARY KEY`, `0`–`6` (`CHECK (code BETWEEN 0 AND 6)`), matching the
+  engine's terrain enum (`Mountain = 0` … `Badlands = 6`). **Never renumbered.**
 - `name` — the terrain name, unique.
 - `worldographer_tile` — the tile name used by the terrain-translation export.
 
@@ -180,7 +192,9 @@ presents its `token` as an opaque bearer credential.
 
 - `id` — a public, opaque session identifier used to address a session in the
   API (e.g. to revoke one). Primary key.
-- `account_id` — `→ accounts(id)`, the effective identity.
+- `account_id` — `→ accounts(id)`, `ON DELETE CASCADE`, the effective identity.
+  Deleting an account drops its sessions (they authenticate that account and
+  nothing else), matching `memberships.account_id`.
 - `token` — the bearer credential, `UNIQUE`. A hex-encoded random N-bit value —
   high enough entropy that it is stored **as-is, not hashed** (unlike
   `accounts.password_hash`, which is bcrypt). The auth middleware resolves it by
@@ -336,6 +350,9 @@ faction and occupies one province (which may lie off the generated map).
   `FOREIGN KEY (game_id, faction_id) → factions(game_id, id)`, so an entity and
   its faction must be in the same game.
 - `loc_q`, `loc_r` — the occupied province.
+- Index `entities_by_game (game_id, faction_id)` — `entities` has no
+  `UNIQUE (game_id, …)` to supply a `game_id` prefix (its key is the `id` rowid
+  alias), so this index backs both per-game and per-faction lookups.
 
 ## Orders
 
