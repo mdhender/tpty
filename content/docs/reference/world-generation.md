@@ -181,10 +181,9 @@ Rules for the file:
 - A **missing file** and an **empty array** both mean "no starting provinces
   defined". Player creation fails until at least one exists.
 
-Entries are validated only for canonical form and uniqueness. A starting
-province is not required to name a province that exists in the generated world;
-naming a hex outside the world is allowed but will leave no player able to start
-there. Keeping the set within the world is the GM's responsibility.
+Entries are validated for canonical form, uniqueness, and **existence**: a
+starting province must name a province that exists in the generated world.
+Naming a hex outside the world is rejected.
 
 ### Managing the set
 
@@ -193,7 +192,8 @@ file by hand:
 
 - `tpty world starting-provinces generate` — write the default six (see above).
 - `tpty world starting-provinces add --province (q,r)` — append one province.
-  Rejects a non-canonical coordinate and a province already in the set.
+  Rejects a non-canonical coordinate, a province already in the set, and a
+  province that does not exist in the generated world.
 - `tpty world starting-provinces remove --province (q,r)` — remove one province.
   Rejects a province that is not in the set. Warns, but proceeds, if a player is
   already placed on the removed province: that player is left on a province no
