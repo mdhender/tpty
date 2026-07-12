@@ -33,8 +33,9 @@ through `memberships`.
 
 Note the deliberate name overlap: an account with a seat is loosely called a
 "player," but the engine-side [`players`]({{< relref "/docs/reference/players.md" >}})
-table is a different thing (handles, seeds, provinces). A GM holds a membership
-but never gets a `players` row — a GM controls nothing in the game.
+table holds a different thing (`display_name`, seeds, provinces) — though it is
+keyed by the same id as the seat. A GM holds a membership but never gets a
+`players` row — a GM controls nothing in the game.
 
 ## Conventions
 
@@ -65,15 +66,19 @@ no `ON UPDATE`, so the store sets `updated_at` on every write. `sessions` carrie
 
 ### Ids
 
-- **Surrogate ids** (`accounts.id`, `games.id`, `memberships.id`) are
-  auto-assigned `INTEGER PRIMARY KEY` rowids. `games.id` is the target of every
-  `game_id` foreign key; the game's human-facing slug is `games.code`.
-- **Engine-side ids** (`players.id`, `factions.id`, `entities.id`) are
-  **game-scoped**: assigned sequentially per game, unique within the game, and
-  never reused — even after a soft delete. Their natural key is
-  `(game_id, id)`, where `game_id` is the surrogate `games.id`. The next value
-  for each is held in `sequences` (see below), mirroring the engine's `NextID`
-  discipline.
+The schema **standardizes on globally-unique ids**: every surrogate id is an
+`INTEGER PRIMARY KEY AUTOINCREMENT` — never scoped to a game, and **never reused**
+(`AUTOINCREMENT` guarantees it, even across hard deletes). There are no per-game
+id counters; an id means the same thing everywhere in the database.
+
+- `accounts.id`, `games.id`, `memberships.id`, `factions.id`, and `entities.id`
+  are each such an id. `games.id` is the target of every `game_id` foreign key;
+  the game's human-facing slug is `games.code`.
+- **The player_id is `memberships.id`.** `players.id` *is* the membership's id (a
+  `REFERENCES memberships(id)` primary key); only a member with `is_gm = 0` gets
+  a `players` row.
+- Tables with a global id keep a plain `game_id` column for querying
+  (`players`, `factions`, `entities`); it is not part of their key.
 
 ### Coordinates
 
@@ -85,7 +90,7 @@ foreign keys into `provinces`.
 ### Soft delete
 
 Removal is a soft delete: an `inactive` flag is set to `1` and the row is kept.
-Uniqueness (e.g. `players` email/handle, a `memberships` seat) is enforced
+Uniqueness (e.g. `players` email/display_name, a `memberships` seat) is enforced
 across active **and** inactive rows, so removing and re-adding reactivates the
 existing row rather than inserting a duplicate.
 
@@ -95,6 +100,32 @@ Foreign keys are declared throughout but SQLite only enforces them when the
 connection runs `PRAGMA foreign_keys = ON;`. The store sets that on every
 connection. Game-scoped tables use `ON DELETE CASCADE` from `games(id)`, so
 deleting a game removes all of its rows.
+
+### Same-game foreign keys
+
+Because ids are global, a foreign key on a single id column does **not** by itself
+keep the two rows in the same game — a child could point at a parent belonging to
+a different game. Where that must not happen, the parent carries a **redundant**
+`UNIQUE (game_id, id)` (redundant because `id` is already unique on its own) so
+the child can foreign-key the *pair*:
+
+```
+FOREIGN KEY (game_id, <parent>_id) REFERENCES parent(game_id, id)
+```
+
+The composite FK forces the child's `game_id` to equal the parent's, catching a
+cross-game reference at write time.
+
+This guards three relationships:
+
+- `players → memberships` — `players` foreign-keys `(game_id, id)`, so a player
+  and its membership (seat) are in the same game.
+- `entities → factions` — an entity and its faction are in the same game.
+- `order_submissions → players` — a submission and its player are in the same
+  game.
+
+In each case the parent (`memberships`, `factions`, `players`) carries the
+redundant `UNIQUE (game_id, id)`.
 
 ## Global / static tables
 
@@ -120,7 +151,7 @@ once.
 An account authenticates a person with the game server. It is server-level, not
 scoped to a game.
 
-- `id` — auto-assigned primary key.
+- `id` — `AUTOINCREMENT` primary key (globally unique, never reused).
 - `email` — unique. The application lowercases it before saving.
 - `display_name` — how the person wants to be addressed; default `''`. A
   convenience for administrators.
@@ -160,7 +191,8 @@ A seat at a game's table: the authorization that an account may participate in a
 game, and in which role. This is the [boundary](#the-server--engine-boundary)
 between the server and engine sides.
 
-- `id` — auto-assigned primary key.
+- `id` — `AUTOINCREMENT` primary key. **This is the engine's `player_id`**:
+  globally unique, never reused, not a per-game sequence.
 - `account_id` — `→ accounts(id)`, `ON DELETE CASCADE`. Required.
 - `game_id` — `→ games(id)`, `ON DELETE CASCADE`. Required.
 - `is_gm` — boolean, default `0`. `1` marks the game master; `0` an ordinary
@@ -168,10 +200,14 @@ between the server and engine sides.
 - `inactive` — boolean, default `0`.
 - `UNIQUE (account_id, game_id)` — one seat per account per game, spanning
   active and inactive rows.
+- `UNIQUE (game_id, id)` — redundant, present as the FK target that ties a
+  `players` row to a membership in the same game (see
+  [Same-game foreign keys](#same-game-foreign-keys)).
 
 A membership with `is_gm = 0` is what later gains an engine-side
-[`players`]({{< relref "/docs/reference/players.md" >}}) record when the account
-enters play; a membership with `is_gm = 1` never does.
+[`players`]({{< relref "/docs/reference/players.md" >}}) record — keyed by this
+same `id` — when the account enters play; a membership with `is_gm = 1` never
+does.
 
 ## Engine-side tables
 
@@ -181,8 +217,8 @@ The top-level [game]({{< relref "/docs/reference/games.md" >}}) — the shared
 identity every `game_id` foreign key targets. It carries only identity; the
 engine's per-game state lives in [`game_engine_state`](#game_engine_state).
 
-- `id` — auto-assigned `INTEGER PRIMARY KEY`, the surrogate key that every
-  `game_id` foreign key targets.
+- `id` — `INTEGER PRIMARY KEY AUTOINCREMENT` (never reused), the surrogate key
+  that every `game_id` foreign key targets.
 - `code` — the game's human-facing slug (the id the GM chooses and that orders
   files carry). `UNIQUE`, `1`–`6` characters, uppercase letters and digits only
   (`CHECK (length(code) BETWEEN 1 AND 6)` and
@@ -201,16 +237,6 @@ application and server tables. One row per game.
 - `game_id` — `PRIMARY KEY`, `→ games(id)`, `ON DELETE CASCADE`. One row per game.
 - `seed1`, `seed2` — the game's master seeds (bit-cast; see [Seeds](#seeds)).
 - `current_turn` — the current turn, default `0` (setup; play begins at `1`).
-
-### `sequences`
-
-The per-game monotonic id counter for each kind of engine actor. Ids are never
-reused, so `next_id` only ever increases.
-
-- `game_id` — `→ games(id)`.
-- `name` — `'player'`, `'faction'`, or `'entity'`.
-- `next_id` — the next id to assign.
-- `PRIMARY KEY (game_id, name)`.
 
 ### `worlds`
 
@@ -246,33 +272,44 @@ composite foreign key into `provinces` enforces that.
 ### `players`
 
 The engine-side [player]({{< relref "/docs/reference/players.md" >}}): a
-participant with a handle, private seeds, and a starting province. Distinct from
-a server-side account and its [`memberships`](#memberships) seat.
+participant with an in-game handle, private seeds, and a starting province.
+Distinct from a server-side account, but keyed by the same id as its
+[`memberships`](#memberships) seat.
 
-- `game_id` — `→ games(id)`.
-- `id` — the game-scoped sequential id.
-- `handle` — the display name.
+- `id` — `PRIMARY KEY`. **The global player_id** — there is one `players` row per
+  player membership (`is_gm = 0`).
+- `game_id` — `→ games(id)`. A plain column kept for querying.
+- `FOREIGN KEY (game_id, id) → memberships(game_id, id)` — ties the player to its
+  membership *and* enforces the same game (see
+  [Same-game foreign keys](#same-game-foreign-keys)).
+- `UNIQUE (game_id, id)` — redundant, the FK target for `order_submissions`.
+- `display_name` — the player's in-game handle; the private seeds derive from it,
+  so it is stable for the life of the game.
 - `email` — stored lowercased.
 - `start_q`, `start_r` — the starting province.
 - `password` — the plaintext order-authentication secret.
 - `seed1`, `seed2` — the player's private seeds.
 - `inactive` — boolean, default `0`.
-- `PRIMARY KEY (game_id, id)`, `UNIQUE (game_id, email)`,
-  `UNIQUE (game_id, handle)` — both unique keys span active and inactive rows.
+- `UNIQUE (game_id, email)`, `UNIQUE (game_id, display_name)` — both span active
+  and inactive rows.
 
 ### `factions`
 
 A group of entities under one controller — see
 [Factions]({{< relref "/docs/reference/factions.md" >}}).
 
-- `game_id` — `→ games(id)`.
-- `id` — the game-scoped sequential id.
+- `id` — `INTEGER PRIMARY KEY AUTOINCREMENT`. Globally unique, never reused,
+  aligning with the player_id.
+- `game_id` — `→ games(id)`. A plain column kept for querying.
 - `name` — `UNIQUE (game_id, name)`.
 - `controller_kind` — `CHECK (controller_kind IN ('player', 'npc'))`.
 - `controller_id` — `CHECK (controller_id >= 1)`. It names a player or an NPC;
   because the target depends on `controller_kind` it is **not** a single foreign
-  key.
-- `PRIMARY KEY (game_id, id)`.
+  key. For a player controller it is the global player_id (`memberships.id` /
+  `players.id`).
+- `UNIQUE (game_id, id)` — redundant (`id` is already unique) but present so
+  `entities` can foreign-key `(game_id, faction_id)` and share a game with its
+  faction.
 
 ### `entities`
 
@@ -280,13 +317,13 @@ The actors orders act on — see
 [Entities]({{< relref "/docs/reference/entities.md" >}}). Each belongs to one
 faction and occupies one province (which may lie off the generated map).
 
-- `game_id` — `→ games(id)`.
-- `id` — the game-scoped sequential id.
+- `id` — `INTEGER PRIMARY KEY AUTOINCREMENT`. Globally unique, never reused.
+- `game_id` — `→ games(id)`. A plain column kept for querying.
 - `name` — a display label; need not be unique.
-- `faction_id` — the owning faction; `FOREIGN KEY (game_id, faction_id) →
-  factions(game_id, id)`.
+- `faction_id` — the owning faction;
+  `FOREIGN KEY (game_id, faction_id) → factions(game_id, id)`, so an entity and
+  its faction must be in the same game.
 - `loc_q`, `loc_r` — the occupied province.
-- `PRIMARY KEY (game_id, id)`.
 
 ## Orders
 
@@ -300,7 +337,9 @@ engine, so it is authoritative.
 
 - `game_id` — `→ games(id)`.
 - `turn`, `player_id` — the submitting player and turn;
-  `FOREIGN KEY (game_id, player_id) → players(game_id, id)`.
+  `FOREIGN KEY (game_id, player_id) → players(game_id, id)`, so the submission is
+  in the same game as the player (see
+  [Same-game foreign keys](#same-game-foreign-keys)).
 - `raw` — the submission text, exactly as received.
 - `PRIMARY KEY (game_id, turn, player_id)` — one submission per player per turn.
 

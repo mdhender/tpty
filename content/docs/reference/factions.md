@@ -17,9 +17,8 @@ Every faction has an id and a name.
 ### ID
 
 - A positive integer assigned by the engine when the faction is created.
-- Unique within the game.
-- Assigned sequentially in increasing order. The first faction created in a game
-  is `1`, the next `2`, and so on. IDs are never reused within a game.
+- **Globally unique** and never reused — the id is not scoped to a game and does
+  not restart per game.
 
 ### Name
 

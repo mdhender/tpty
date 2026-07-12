@@ -16,8 +16,8 @@ Every entity has an id and a name.
 ### ID
 
 - A positive integer assigned by the engine when the entity is created.
-- Unique within the game.
-- Assigned sequentially in increasing order. IDs are never reused within a game.
+- **Globally unique** and never reused — the id is not scoped to a game and does
+  not restart per game.
 - An orders file names an entity by this id, on the entity block's header line
   (`entity <id>, <name>`); see [Orders]({{< relref "/docs/reference/orders" >}}).
 

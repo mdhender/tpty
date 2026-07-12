@@ -45,7 +45,7 @@ CREATE TABLE terrains (
 -- is_admin are booleans stored as INTEGER (0 = false, 1 = true). Timestamps are
 -- Unix seconds (UTC).
 CREATE TABLE accounts (
-    id            INTEGER PRIMARY KEY,
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
     email         TEXT NOT NULL UNIQUE,                    -- lowercased before saving
     display_name  TEXT NOT NULL DEFAULT '',               -- how the person wants to be addressed
     password_hash TEXT NOT NULL DEFAULT '*',               -- '*' is not a valid hash, so it fails every login
@@ -86,20 +86,10 @@ CREATE INDEX sessions_by_account ON sessions(account_id);
 -- state stays out of the application/server tables. See
 -- content/docs/reference/games.md.
 CREATE TABLE games (
-    id   INTEGER PRIMARY KEY,                -- surrogate, auto-assigned
+    id   INTEGER PRIMARY KEY AUTOINCREMENT,  -- surrogate, globally unique, never reused
     code TEXT NOT NULL UNIQUE,               -- slug; the game's human-facing id
     CHECK (length(code) BETWEEN 1 AND 6),    -- 1..6 characters wide
     CHECK (code NOT GLOB '*[^A-Z0-9]*')      -- uppercase letters and digits only
-);
-
--- sequences holds the per-game monotonic id counter for each kind of actor.
--- Ids are assigned in increasing order and never reused within a game, even
--- after a soft delete, so next_id is persisted and never decreases.
-CREATE TABLE sequences (
-    game_id INTEGER NOT NULL REFERENCES games(id) ON DELETE CASCADE,
-    name    TEXT NOT NULL,                -- 'player' | 'faction' | 'entity'
-    next_id INTEGER NOT NULL,
-    PRIMARY KEY (game_id, name)
 );
 
 -- ---------------------------------------------------------------------------
@@ -109,17 +99,22 @@ CREATE TABLE sequences (
 -- memberships gives an account a seat at a game's table: the authorization that
 -- an account may participate in a game, and in which role. is_gm = 1 marks the
 -- game master; is_gm = 0 an ordinary player. This is the authorization layer and
--- is distinct from the game-domain players table below (handles, seeds,
+-- is distinct from the game-domain players table below (display_name, seeds,
 -- provinces). A GM holds a seat but gets no engine player record — a GM controls
 -- nothing in the game. Removal is a soft delete (inactive = 1); the UNIQUE key
 -- spans active + inactive, so re-seating reactivates the same row.
+--
+-- id is also the engine's player_id: globally unique (AUTOINCREMENT, never
+-- reused), NOT a per-game sequence. The players table below keys off it, so a
+-- player is identified the same way across the whole database.
 CREATE TABLE memberships (
-    id         INTEGER PRIMARY KEY,
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
     account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
     game_id    INTEGER NOT NULL REFERENCES games(id) ON DELETE CASCADE,
     is_gm      INTEGER NOT NULL DEFAULT 0 CHECK (is_gm    IN (0, 1)),
     inactive   INTEGER NOT NULL DEFAULT 0 CHECK (inactive IN (0, 1)),
-    UNIQUE (account_id, game_id)
+    UNIQUE (account_id, game_id),
+    UNIQUE (game_id, id)   -- FK target for players (same-game enforcement)
 );
 
 -- ---------------------------------------------------------------------------
@@ -178,49 +173,60 @@ CREATE TABLE starting_provinces (
 -- Players, factions, entities
 -- ---------------------------------------------------------------------------
 
--- players are people participating in a game. Removal is a soft delete
--- (inactive = 1); the record and its unique email/handle are retained. See
--- players.md.
+-- players are the engine attributes of a player seat. id is the global player_id
+-- — it IS the membership's id (not a per-game sequence), so only a member with
+-- is_gm = 0 gets a players row. game_id is kept as a plain column for querying
+-- (which game this player is in); the (game_id, id) foreign key keeps it aligned
+-- with the membership's game. Removal is a soft delete (inactive = 1); the record
+-- and its unique email/display_name are retained. See players.md.
 CREATE TABLE players (
-    game_id  INTEGER NOT NULL REFERENCES games(id) ON DELETE CASCADE,
-    id       INTEGER NOT NULL,            -- per-game sequential
-    handle   TEXT NOT NULL,
-    email    TEXT NOT NULL,               -- stored lowercased
-    start_q  INTEGER NOT NULL,            -- starting province
-    start_r  INTEGER NOT NULL,
-    password TEXT NOT NULL,               -- plaintext shared secret
-    seed1    INTEGER NOT NULL,            -- player's private seeds
-    seed2    INTEGER NOT NULL,
-    inactive INTEGER NOT NULL DEFAULT 0,  -- 0 = active, 1 = removed
-    PRIMARY KEY (game_id, id),
-    UNIQUE (game_id, email),              -- unique across active + inactive
-    UNIQUE (game_id, handle)
+    id           INTEGER NOT NULL PRIMARY KEY,
+    game_id      INTEGER NOT NULL REFERENCES games(id) ON DELETE CASCADE,
+    display_name TEXT NOT NULL,               -- the player's in-game handle (seeds derive from it)
+    email        TEXT NOT NULL,               -- stored lowercased
+    start_q      INTEGER NOT NULL,            -- starting province
+    start_r      INTEGER NOT NULL,
+    password     TEXT NOT NULL,               -- plaintext shared secret
+    seed1        INTEGER NOT NULL,            -- player's private seeds
+    seed2        INTEGER NOT NULL,
+    inactive     INTEGER NOT NULL DEFAULT 0,  -- 0 = active, 1 = removed
+    UNIQUE (game_id, email),                  -- unique across active + inactive
+    UNIQUE (game_id, display_name),
+    UNIQUE (game_id, id),                                          -- FK target for order_submissions
+    FOREIGN KEY (game_id, id) REFERENCES memberships(game_id, id)  -- id = membership id, same game
 );
 
 -- factions are groups of entities under a single controller (a player or an
--- NPC). controller_id is scoped to controller_kind, so player ids and npc ids
--- cannot be confused. See factions.md.
+-- NPC). id is globally unique (AUTOINCREMENT, never reused), aligning with the
+-- player_id; game_id is kept as a plain column for querying. controller_id is
+-- scoped to controller_kind, so player ids and npc ids cannot be confused; for a
+-- player controller it is the global player_id (memberships.id / players.id).
+-- The UNIQUE (game_id, id) is redundant (id is already unique) but exists so
+-- entities can FK (game_id, faction_id), forcing an entity to share its faction's
+-- game. See factions.md.
 CREATE TABLE factions (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
     game_id         INTEGER NOT NULL REFERENCES games(id) ON DELETE CASCADE,
-    id              INTEGER NOT NULL,
     name            TEXT NOT NULL,
     controller_kind TEXT NOT NULL CHECK (controller_kind IN ('player','npc')),
     controller_id   INTEGER NOT NULL CHECK (controller_id >= 1),
-    PRIMARY KEY (game_id, id),
-    UNIQUE (game_id, name)
+    UNIQUE (game_id, name),
+    UNIQUE (game_id, id)   -- FK target for entities (same-game enforcement)
     -- controller_id names a player or npc; it cannot be a single FK target.
 );
 
--- entities are the actors orders act on. Each belongs to one faction and
--- occupies one province (which may lie off the generated map). See entities.md.
+-- entities are the actors orders act on. id is globally unique (AUTOINCREMENT,
+-- never reused); game_id is kept as a plain column for querying. Each belongs to
+-- one faction and occupies one province (which may lie off the generated map).
+-- The FK is on (game_id, faction_id) so an entity and its faction must share a
+-- game. See entities.md.
 CREATE TABLE entities (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
     game_id    INTEGER NOT NULL REFERENCES games(id) ON DELETE CASCADE,
-    id         INTEGER NOT NULL,
     name       TEXT NOT NULL,
     faction_id INTEGER NOT NULL,
     loc_q      INTEGER NOT NULL,          -- occupied province
     loc_r      INTEGER NOT NULL,
-    PRIMARY KEY (game_id, id),
     FOREIGN KEY (game_id, faction_id) REFERENCES factions(game_id, id)
 );
 
@@ -236,7 +242,7 @@ CREATE TABLE order_submissions (
     player_id INTEGER NOT NULL,
     raw       TEXT NOT NULL,
     PRIMARY KEY (game_id, turn, player_id),
-    FOREIGN KEY (game_id, player_id) REFERENCES players(game_id, id)
+    FOREIGN KEY (game_id, player_id) REFERENCES players(game_id, id)  -- same game as the player
 );
 
 -- parsed_orders is the normalized parse of a submission: one row per order line,
