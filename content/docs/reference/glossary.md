@@ -46,6 +46,12 @@ Definitions of terms used across the reference.
   player or the GM. An NPC can control a faction in place of a player. See
   [Factions]({{< relref "/docs/reference/factions.md#controller" >}}).
 
+**Operator**
+: The person who administers a T'Pty server and its database with the `tdb`
+  tool — creating, migrating, backing up, and compacting it, and creating
+  accounts. Distinct from the game master (GM), who runs individual games. See
+  [Administer a database with tdb]({{< relref "/docs/how-to/administer-a-database.md" >}}).
+
 **Origin**
 : The center hex of the world, at axial coordinates `(0, 0)`.
 
