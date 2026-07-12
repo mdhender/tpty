@@ -23,5 +23,7 @@ reviewed and moved here.
   {{< card link="entities" title="Entities" subtitle="Actors in the world: identity, owning faction, and location" >}}
   {{< card link="orders" title="Orders" subtitle="The orders file format, authentication, and the command summary for every order" >}}
   {{< card link="reports" title="Reports" subtitle="The per-player turn report: its contents and the start-of-turn snapshot it describes" >}}
+  {{< card link="sql-schema" title="SQL Schema" subtitle="The SQLite storage backend: its tables and the server/engine boundary" >}}
+  {{< card link="configuration" title="Configuration" subtitle="How tpty reads TPTY_ environment variables and .env files" >}}
   {{< card link="glossary" title="Glossary" subtitle="Terms used across the reference" >}}
 {{< /cards >}}

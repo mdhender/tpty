@@ -12,21 +12,22 @@ belongs to exactly one game.
 
 ## Identity
 
-Every faction has an id and a name.
+Every faction has an id and a display name.
 
 ### ID
 
 - A positive integer assigned by the engine when the faction is created.
-- Unique within the game.
-- Assigned sequentially in increasing order. The first faction created in a game
-  is `1`, the next `2`, and so on. IDs are never reused within a game.
+- **Globally unique** and never reused — the id is not scoped to a game and does
+  not restart per game.
 
-### Name
+### Display name
 
-- A display name for the faction, shown in reports.
+- The `display_name` field: the faction's name, shown in reports.
 - Required and non-empty.
 - Stored as entered; its case is preserved.
 - Unique within the game, compared exactly (case-sensitively).
+- Its format is validated by the API service, not the database (see
+  [SQL Schema]({{< relref "/docs/reference/sql-schema.md#display-names" >}})).
 
 ## Controller
 
@@ -46,8 +47,8 @@ controller's id within that kind, so player ids and NPC ids cannot be confused.
 - A player controls one or more factions. When a player enters play, the engine
   creates the player a single faction (see
   [Turns]({{< relref "/docs/reference/turns.md" >}})). Until a name generator
-  exists, a faction the engine seeds at turn 1 is given the placeholder name
-  `Faction <id>`, using its own id.
+  exists, a faction the engine seeds at turn 1 is given the placeholder display
+  name `Faction <id>`, using its own id.
 
 ### NPC-controlled factions
 
@@ -83,8 +84,10 @@ A player-controlled faction:
 ```json
 {
   "id": 1,
-  "name": "The Slaves of Darkness",
-  "controller": { "kind": "player", "id": 3 }
+  "game_id": 3,
+  "display_name": "The Slaves of Darkness",
+  "controller_kind": "player",
+  "controller_id": 3
 }
 ```
 
@@ -93,8 +96,10 @@ An NPC-controlled faction:
 ```json
 {
   "id": 2,
-  "name": "The Wild Tribes",
-  "controller": { "kind": "npc", "id": 1 }
+  "game_id": 3,
+  "display_name": "The Wild Tribes",
+  "controller_kind": "npc",
+  "controller_id": 1
 }
 ```
 
