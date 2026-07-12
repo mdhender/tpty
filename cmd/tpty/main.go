@@ -28,14 +28,12 @@ func main() {
 	// Load .env files before parsing flags so ff reads TPTY_* variables sourced
 	// from them. TPTY_ENV selects which files load (see dotenv) and is read
 	// straight from the environment — not a flag — because it must be known
-	// before any flag is parsed. It defaults to development.
-	env := os.Getenv("TPTY_ENV")
-	if env == "" {
-		env = "development"
-	}
-	if err := dotenv.Load(env); err != nil {
-		_, _ = fmt.Fprintf(os.Stderr, "error: load %q environment: %v\n", env, err)
-		os.Exit(1)
+	// before any flag is parsed. If not set, do not load any dotenv files.
+	if env, ok := os.LookupEnv("TPTY_ENV"); ok {
+		if err := dotenv.Load(env); err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "error: %q: %v\n", env, err)
+			os.Exit(1)
+		}
 	}
 
 	root := newRootCommand()
