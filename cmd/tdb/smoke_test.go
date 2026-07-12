@@ -138,9 +138,14 @@ func TestSmokeEndToEnd(t *testing.T) {
 		t.Fatalf("migrateInstance = %v, want nil", err)
 	}
 
-	// version → runs without error against the instance.
-	if err := showVersion(ctx, dir); err != nil {
+	// version → the application version, no instance needed.
+	if err := showVersion(); err != nil {
 		t.Fatalf("showVersion = %v, want nil", err)
+	}
+
+	// migrate version → the database schema version.
+	if err := showSchemaVersion(ctx, dir); err != nil {
+		t.Fatalf("showSchemaVersion = %v, want nil", err)
 	}
 }
 

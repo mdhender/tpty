@@ -23,8 +23,6 @@ import (
 	"github.com/peterbourgon/ff/v4"
 	"github.com/peterbourgon/ff/v4/ffhelp"
 	"golang.org/x/crypto/bcrypt"
-	zsqlite "zombiezen.com/go/sqlite" // the driver; our store package is also "sqlite"
-	"zombiezen.com/go/sqlite/sqlitex"
 )
 
 func main() {
@@ -60,11 +58,13 @@ func main() {
 //	├── create
 //	│   ├── database    create and migrate a new database
 //	│   └── account     insert an account with a bcrypt password hash
-//	├── migrate         migrate an existing instance up
-//	├── verify          check the migration version equals the expected version
+//	├── migrate
+//	│   ├── up          migrate an existing database up
+//	│   ├── verify      check the schema version equals the expected version
+//	│   └── version     show the database schema version
 //	├── backup          back up an instance (non-mutating)
 //	├── compact         VACUUM an instance (non-mutating; offline)
-//	└── version         print the application and database versions
+//	└── version         print the application version
 //
 // --path (the directory holding the instance) is a global flag shared by every
 // subcommand. Commands take flags only; positional arguments are rejected.
@@ -82,7 +82,7 @@ func newRootCommand() *ff.Command {
 		Flags:     rootFlags,
 		Exec: func(ctx context.Context, args []string) error {
 			if *version {
-				return showVersion(ctx, *path)
+				return showVersion()
 			}
 			// No subcommand selected; show help.
 			return ff.ErrHelp
@@ -92,21 +92,11 @@ func newRootCommand() *ff.Command {
 	root.Subcommands = []*ff.Command{
 		newCreateCommand(rootFlags, path),
 		newMigrateCommand(rootFlags, path),
-		newVerifyCommand(rootFlags, path),
 		newBackupCommand(rootFlags, path),
 		newCompactCommand(rootFlags, path),
-		newVersionCommand(rootFlags, path),
+		newVersionCommand(rootFlags),
 	}
 	return root
-}
-
-// execArgs runs a single write statement on conn, binding any positional args.
-func execArgs(conn *zsqlite.Conn, query string, args ...any) error {
-	var opts *sqlitex.ExecOptions
-	if len(args) > 0 {
-		opts = &sqlitex.ExecOptions{Args: args}
-	}
-	return sqlitex.ExecuteTransient(conn, query, opts)
 }
 
 // noArgs rejects positional arguments; tdb commands take flags only.
@@ -164,12 +154,33 @@ func newCreateDatabaseCommand(parent *ff.FlagSet, path *string) *ff.Command {
 	}
 }
 
+// newMigrateCommand builds the "migrate" resource group and its subcommands.
 func newMigrateCommand(parent *ff.FlagSet, path *string) *ff.Command {
-	fs := ff.NewFlagSet("migrate").SetParent(parent)
-	return &ff.Command{
+	migrateFlags := ff.NewFlagSet("migrate").SetParent(parent)
+	migrate := &ff.Command{
 		Name:      "migrate",
-		Usage:     "tdb migrate [FLAGS]",
-		ShortHelp: "migrate an existing instance up",
+		Usage:     "tdb migrate [FLAGS] SUBCOMMAND ...",
+		ShortHelp: "migrate a database up or show its schema version",
+		Flags:     migrateFlags,
+		Exec: func(ctx context.Context, args []string) error {
+			// No subcommand selected; show help.
+			return ff.ErrHelp
+		},
+	}
+	migrate.Subcommands = []*ff.Command{
+		newMigrateUpCommand(migrateFlags, path),
+		newMigrateVerifyCommand(migrateFlags, path),
+		newMigrateVersionCommand(migrateFlags, path),
+	}
+	return migrate
+}
+
+func newMigrateUpCommand(parent *ff.FlagSet, path *string) *ff.Command {
+	fs := ff.NewFlagSet("up").SetParent(parent)
+	return &ff.Command{
+		Name:      "up",
+		Usage:     "tdb migrate up [FLAGS]",
+		ShortHelp: "migrate an existing database up",
 		Flags:     fs,
 		Exec: func(ctx context.Context, args []string) error {
 			if err := noArgs(args); err != nil {
@@ -183,12 +194,31 @@ func newMigrateCommand(parent *ff.FlagSet, path *string) *ff.Command {
 	}
 }
 
-func newVerifyCommand(parent *ff.FlagSet, path *string) *ff.Command {
+func newMigrateVersionCommand(parent *ff.FlagSet, path *string) *ff.Command {
+	fs := ff.NewFlagSet("version").SetParent(parent)
+	return &ff.Command{
+		Name:      "version",
+		Usage:     "tdb migrate version [FLAGS]",
+		ShortHelp: "show the database schema version",
+		Flags:     fs,
+		Exec: func(ctx context.Context, args []string) error {
+			if err := noArgs(args); err != nil {
+				return err
+			}
+			if err := requirePath(*path); err != nil {
+				return err
+			}
+			return showSchemaVersion(ctx, *path)
+		},
+	}
+}
+
+func newMigrateVerifyCommand(parent *ff.FlagSet, path *string) *ff.Command {
 	fs := ff.NewFlagSet("verify").SetParent(parent)
 	return &ff.Command{
 		Name:      "verify",
-		Usage:     "tdb verify [FLAGS]",
-		ShortHelp: "check the migration version equals the expected version",
+		Usage:     "tdb migrate verify [FLAGS]",
+		ShortHelp: "check the schema version equals the expected version",
 		Flags:     fs,
 		Exec: func(ctx context.Context, args []string) error {
 			if err := noArgs(args); err != nil {
@@ -266,18 +296,18 @@ func newCreateAccountCommand(parent *ff.FlagSet, path *string) *ff.Command {
 	}
 }
 
-func newVersionCommand(parent *ff.FlagSet, path *string) *ff.Command {
+func newVersionCommand(parent *ff.FlagSet) *ff.Command {
 	fs := ff.NewFlagSet("version").SetParent(parent)
 	return &ff.Command{
 		Name:      "version",
-		Usage:     "tdb version [FLAGS]",
-		ShortHelp: "print the application and database versions",
+		Usage:     "tdb version",
+		ShortHelp: "print the application version",
 		Flags:     fs,
 		Exec: func(ctx context.Context, args []string) error {
 			if err := noArgs(args); err != nil {
 				return err
 			}
-			return showVersion(ctx, *path)
+			return showVersion()
 		},
 	}
 }
@@ -311,7 +341,7 @@ func migrateInstance(ctx context.Context, path string) error {
 	if exists, err := sqlite.InstanceExists(path); err != nil {
 		return err
 	} else if !exists {
-		return fmt.Errorf("no instance in %s (use create)", path)
+		return fmt.Errorf("no instance in %s (use create database)", path)
 	}
 
 	db, err := sqlite.OpenPersistent(ctx, path)
@@ -415,30 +445,12 @@ func createAccount(ctx context.Context, path, email, displayName string, admin b
 		return fmt.Errorf("hash password: %w", err)
 	}
 
-	db, err := sqlite.OpenPersistent(ctx, path)
+	id, err := sqlite.CreateAccount(ctx, path, email, displayName, string(hash), admin)
 	if err != nil {
 		return err
 	}
-	defer db.Close()
 
-	conn, err := db.Get(ctx)
-	if err != nil {
-		return err
-	}
-	defer db.Put(conn)
-
-	isAdmin := 0
-	if admin {
-		isAdmin = 1
-	}
-	if err := execArgs(conn,
-		"INSERT INTO accounts (email, display_name, password_hash, is_admin) VALUES (?, ?, ?, ?);",
-		email, displayName, string(hash), isAdmin,
-	); err != nil {
-		return fmt.Errorf("create account: %w", err)
-	}
-
-	fmt.Printf("created account %q (id=%d, admin=%t)\n", email, conn.LastInsertRowID(), admin)
+	fmt.Printf("created account %q (id=%d, admin=%t)\n", email, id, admin)
 	if generated {
 		fmt.Printf("generated secret: %s\n", secret)
 	}
@@ -459,22 +471,20 @@ func generateSecret() (string, error) {
 	return phrases.Generate(r, 7), nil
 }
 
-// showVersion prints the application version, and — when path names an existing
-// instance — the database migration version too.
-func showVersion(ctx context.Context, path string) error {
+// showVersion prints the application version.
+func showVersion() error {
 	fmt.Printf("tdb %s\n", tpty.Version())
-	fmt.Printf("expected migration version %d\n", sqlite.ExpectedVersion())
+	return nil
+}
 
-	if path == "" {
-		return nil
-	}
-	exists, err := sqlite.InstanceExists(path)
-	if err != nil {
+// showSchemaVersion prints the database's on-disk schema (migration) version,
+// alongside the version this binary expects, so the operator can see whether a
+// migrate up is needed. It does not migrate the instance.
+func showSchemaVersion(ctx context.Context, path string) error {
+	if exists, err := sqlite.InstanceExists(path); err != nil {
 		return err
-	}
-	if !exists {
-		fmt.Printf("no instance in %s\n", path)
-		return nil
+	} else if !exists {
+		return fmt.Errorf("no instance in %s", path)
 	}
 
 	db, err := sqlite.OpenNonMigrating(ctx, path)
@@ -487,6 +497,7 @@ func showVersion(ctx context.Context, path string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("database migration version %d\n", v)
+	fmt.Printf("database schema version %d\n", v)
+	fmt.Printf("expected schema version %d\n", sqlite.ExpectedVersion())
 	return nil
 }

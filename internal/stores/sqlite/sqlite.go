@@ -22,10 +22,12 @@ const (
 	// directory. The store never creates directories, so a bad path is a hard
 	// error, never something to create.
 	ErrInvalidPath = cerrs.Error("invalid path")
-	// ErrNotExist is returned by OpenPersistent when the directory exists but
-	// holds no instance. Bringing an instance into being is CreatePersistent's
-	// job, never OpenPersistent's.
-	ErrNotExist = cerrs.Error("instance does not exist")
+	// ErrNotExist is returned when a directory exists but holds no instance — by
+	// OpenPersistent, Backup, and Compact, which all operate on an existing
+	// instance. Bringing one into being is CreatePersistent's job. It is wrapped
+	// with the directory (see requireInstance), so callers see "no instance in
+	// <dir>".
+	ErrNotExist = cerrs.Error("no instance")
 )
 
 // dbFilename is the file name the store owns under a persistent instance's
@@ -116,10 +118,8 @@ func OpenPersistent(ctx context.Context, dir string) (*DB, error) {
 	// keeps a missing file away from sqlitemigration, which retries a failing
 	// open indefinitely (a server-startup convenience) rather than returning the
 	// error — so a doomed URI would hang, not fail.
-	if exists, err := InstanceExists(dir); err != nil {
+	if err := requireInstance(dir); err != nil {
 		return nil, err
-	} else if !exists {
-		return nil, ErrNotExist
 	}
 	return openMigrating(ctx, dir, persistentFlags)
 }
@@ -146,6 +146,18 @@ func CreatePersistent(ctx context.Context, dir string) (*DB, error) {
 func requireDir(dir string) error {
 	if sb, err := os.Stat(dir); err != nil || !sb.IsDir() {
 		return ErrInvalidPath
+	}
+	return nil
+}
+
+// requireInstance returns ErrNotExist, wrapped with dir, unless dir holds an
+// instance. It gives every operation on an existing instance the same
+// "no instance in <dir>" error.
+func requireInstance(dir string) error {
+	if exists, err := InstanceExists(dir); err != nil {
+		return err
+	} else if !exists {
+		return fmt.Errorf("%w in %s", ErrNotExist, dir)
 	}
 	return nil
 }
@@ -237,10 +249,8 @@ const backupStampLayout = "20060102T150405"
 // already exist; the store never creates directories. The source is opened
 // non-migrating and is not modified.
 func Backup(ctx context.Context, dir, outputPath string) (string, error) {
-	if exists, err := InstanceExists(dir); err != nil {
+	if err := requireInstance(dir); err != nil {
 		return "", err
-	} else if !exists {
-		return "", ErrNotExist
 	}
 	if outputPath == "" {
 		outputPath = dir
@@ -284,10 +294,8 @@ func Backup(ctx context.Context, dir, outputPath string) (string, error) {
 // offline operation — the caller must ensure no other process is using the
 // instance.
 func Compact(ctx context.Context, dir string) error {
-	if exists, err := InstanceExists(dir); err != nil {
+	if err := requireInstance(dir); err != nil {
 		return err
-	} else if !exists {
-		return ErrNotExist
 	}
 
 	db, err := OpenNonMigrating(ctx, dir)
@@ -306,6 +314,38 @@ func Compact(ctx context.Context, dir string) error {
 		return fmt.Errorf("sqlite: compact: %w", err)
 	}
 	return nil
+}
+
+// CreateAccount inserts a server account into the instance in dir and returns
+// its new id. It opens the instance migrating (accounts land against the current
+// schema). The caller supplies the already-computed passwordHash — the store
+// persists credentials, it does not hash them — and a lowercased, validated
+// email; the schema enforces email uniqueness. isAdmin is stored as the 0/1
+// boolean the schema expects.
+func CreateAccount(ctx context.Context, dir, email, displayName, passwordHash string, isAdmin bool) (int64, error) {
+	db, err := OpenPersistent(ctx, dir)
+	if err != nil {
+		return 0, err
+	}
+	defer db.Close()
+
+	conn, err := db.Get(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer db.Put(conn)
+
+	admin := 0
+	if isAdmin {
+		admin = 1
+	}
+	if err := sqlitex.ExecuteTransient(conn,
+		"INSERT INTO accounts (email, display_name, password_hash, is_admin) VALUES (?, ?, ?, ?);",
+		&sqlitex.ExecOptions{Args: []any{email, displayName, passwordHash, admin}},
+	); err != nil {
+		return 0, fmt.Errorf("sqlite: create account: %w", err)
+	}
+	return conn.LastInsertRowID(), nil
 }
 
 // Get borrows a connection from the pool, blocking until one is available or ctx
