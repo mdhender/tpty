@@ -8,21 +8,16 @@ each game has its own set of players, and a player belongs to exactly one game.
 
 ## Identity
 
-Every player has three identifying fields: an id, an email, and a display name
-(also called a handle).
+Every player has two identifying fields: an id and a display name (also called a
+handle). The player's email address is **not** a player field — it belongs to the
+player's [account]({{< relref "/docs/reference/sql-schema.md#accounts" >}}), which
+the player joins the game through.
 
 ### ID
 
 - A positive integer assigned by the engine when the player is created.
 - **Globally unique** and never reused — the id is not scoped to a game and does
   not restart per game. The same value identifies the player everywhere.
-
-### Email
-
-- The player's email address.
-- Stored in lowercase. The email is lowercased when the player is saved, so
-  `Alice@Example.com` is stored and matched as `alice@example.com`.
-- Unique within the game, compared after lowercasing.
 
 ### Display name
 
@@ -49,7 +44,7 @@ Every player is either **active** or **inactive**. A player is active when
 created.
 
 Players are never physically deleted. **Removing** a player marks them inactive;
-the record — including its id, email, and display name — is retained in full.
+the record — including its id and display name — is retained in full.
 **Reactivating** an inactive player marks them active again. A player may move
 between the two states any number of times.
 
@@ -57,21 +52,20 @@ Because the record is retained:
 
 - The player's id is never freed or reused, matching the id rule above. A removed
   player's id stays assigned to that player.
-- The player continues to occupy its email and display name. Neither can be taken
-  by a new or existing player while the inactive record holds it — uniqueness is
-  enforced across active and inactive players alike (see
+- The player continues to occupy its display name. It cannot be taken by a new or
+  existing player while the inactive record holds it — uniqueness is enforced
+  across active and inactive players alike (see
   [Uniqueness and scope](#uniqueness-and-scope)).
 
 ## Uniqueness and scope
 
-Within a single game, `email` and `display_name` are each unique. Email
-uniqueness is checked after lowercasing; display-name uniqueness is checked
-exactly. Uniqueness spans every player in the game, active or inactive: an
-inactive player still holds its email and display name, so neither can be reused.
+Within a single game, a player's `display_name` is unique, compared exactly.
+Uniqueness spans every player in the game, active or inactive: an inactive player
+still holds its display name, so it cannot be reused.
 
 Player **ids** are globally unique (see [ID](#id)) — unique across all games, not
-just within one. Email and display name are only game-scoped: the same email or
-display name may appear in more than one game.
+just within one. A display name is only game-scoped: the same display name may
+appear in more than one game.
 
 ## Starting province
 
@@ -115,14 +109,14 @@ exposed. The reset replaces the stored password with a new value:
 - The new value is written to the player record, replacing the old password.
   Authentication always validates an order against the password **stored in the
   player record**, so a reset takes effect as soon as it is saved.
-- Only the stored password changes. The player's id, email, display name,
-  starting province, and private seeds are untouched.
+- Only the stored password changes. The player's id, display name, starting
+  province, and private seeds are untouched.
 
-A reset is looked up by the player's **email** — the address on record — and by
-nothing else. Keying on the distinctive registered email (rather than the id or
-the display name) makes it harder to reset the wrong player's password by
-mistake, and harder for one player to trick the GM into resetting another
-player's password.
+A reset is looked up by the email on the player's **account** — the address on
+record — and by nothing else. Keying on the distinctive registered email (rather
+than the id or the display name) makes it harder to reset the wrong player's
+password by mistake, and harder for one player to trick the GM into resetting
+another player's password.
 
 ## Randomness
 

@@ -177,20 +177,20 @@ CREATE TABLE starting_provinces (
 -- — it IS the membership's id (not a per-game sequence), so only a member with
 -- is_gm = 0 gets a players row. game_id is kept as a plain column for querying
 -- (which game this player is in); the (game_id, id) foreign key keeps it aligned
--- with the membership's game. Removal is a soft delete (inactive = 1); the record
--- and its unique email/display_name are retained. See players.md.
+-- with the membership's game. Email is NOT stored here — it is an account
+-- attribute, reached via the membership (players.id -> memberships.account_id ->
+-- accounts.email). Removal is a soft delete (inactive = 1); the record and its
+-- unique display_name are retained. See players.md.
 CREATE TABLE players (
     id           INTEGER NOT NULL PRIMARY KEY,
     game_id      INTEGER NOT NULL REFERENCES games(id) ON DELETE CASCADE,
     display_name TEXT NOT NULL,               -- the player's in-game handle (seeds derive from it)
-    email        TEXT NOT NULL,               -- stored lowercased
     start_q      INTEGER NOT NULL,            -- starting province
     start_r      INTEGER NOT NULL,
     password     TEXT NOT NULL,               -- plaintext shared secret
     seed1        INTEGER NOT NULL,            -- player's private seeds
     seed2        INTEGER NOT NULL,
     inactive     INTEGER NOT NULL DEFAULT 0,  -- 0 = active, 1 = removed
-    UNIQUE (game_id, email),                  -- unique across active + inactive
     UNIQUE (game_id, display_name),
     UNIQUE (game_id, id),                                          -- FK target for order_submissions
     FOREIGN KEY (game_id, id) REFERENCES memberships(game_id, id)  -- id = membership id, same game
@@ -207,10 +207,10 @@ CREATE TABLE players (
 CREATE TABLE factions (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     game_id         INTEGER NOT NULL REFERENCES games(id) ON DELETE CASCADE,
-    name            TEXT NOT NULL,
+    display_name    TEXT NOT NULL,
     controller_kind TEXT NOT NULL CHECK (controller_kind IN ('player','npc')),
     controller_id   INTEGER NOT NULL CHECK (controller_id >= 1),
-    UNIQUE (game_id, name),
+    UNIQUE (game_id, display_name),
     UNIQUE (game_id, id)   -- FK target for entities (same-game enforcement)
     -- controller_id names a player or npc; it cannot be a single FK target.
 );
@@ -221,12 +221,12 @@ CREATE TABLE factions (
 -- The FK is on (game_id, faction_id) so an entity and its faction must share a
 -- game. See entities.md.
 CREATE TABLE entities (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    game_id    INTEGER NOT NULL REFERENCES games(id) ON DELETE CASCADE,
-    name       TEXT NOT NULL,
-    faction_id INTEGER NOT NULL,
-    loc_q      INTEGER NOT NULL,          -- occupied province
-    loc_r      INTEGER NOT NULL,
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    game_id      INTEGER NOT NULL REFERENCES games(id) ON DELETE CASCADE,
+    display_name TEXT NOT NULL,
+    faction_id   INTEGER NOT NULL,
+    loc_q        INTEGER NOT NULL,          -- occupied province
+    loc_r        INTEGER NOT NULL,
     FOREIGN KEY (game_id, faction_id) REFERENCES factions(game_id, id)
 );
 

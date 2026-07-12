@@ -11,7 +11,7 @@ game: each game has its own entities, and an entity belongs to exactly one game.
 
 ## Identity
 
-Every entity has an id and a name.
+Every entity has an id and a display name.
 
 ### ID
 
@@ -21,14 +21,17 @@ Every entity has an id and a name.
 - An orders file names an entity by this id, on the entity block's header line
   (`entity <id>, <name>`); see [Orders]({{< relref "/docs/reference/orders" >}}).
 
-### Name
+### Display name
 
-- A display name for the entity, shown on the entity block header and in reports.
+- The `display_name` field: the entity's name, shown on the entity block header
+  and in reports.
 - Required and non-empty.
 - Stored as entered; its case is preserved.
-- Need not be unique: an entity is identified by its id, so the name is only a
-  label. It is a text field, quoted in an orders file per the quoting convention
-  (see [Orders]({{< relref "/docs/reference/orders#text-fields" >}})).
+- Need not be unique: an entity is identified by its id, so the display name is
+  only a label. It is a text field, quoted in an orders file per the quoting
+  convention (see [Orders]({{< relref "/docs/reference/orders#text-fields" >}})).
+- Its format is validated by the API service, not the database (see
+  [SQL Schema]({{< relref "/docs/reference/sql-schema.md#display-names" >}})).
 
 ## Faction
 
@@ -60,14 +63,14 @@ The engine creates entities.
   [starting province]({{< relref "/docs/reference/players.md#starting-province" >}}).
   This happens as the game advances into turn 1 (see
   [Turns]({{< relref "/docs/reference/turns.md" >}})). Until a name generator
-  exists, this starting entity is given the placeholder name `Entity <id>`, using
-  its own id.
+  exists, this starting entity is given the placeholder display name
+  `Entity <id>`, using its own id.
 - During play, orders can create further entities. The orders that do so define
   the result; some are not yet implemented.
 
 ## Attributes
 
-Beyond its id, name, faction, and location, an entity carries whatever
+Beyond its id, display name, faction, and location, an entity carries whatever
 attributes the orders acting on it require. This reference lists only the
 attributes in use today; more are added here as the orders that need them are
 implemented (matching how the rules are built up one at a time).
@@ -77,9 +80,11 @@ implemented (matching how the rules are built up one at a time).
 ```json
 {
   "id": 101,
-  "name": "Conan the Copyright",
-  "factionId": 1,
-  "location": "(-1,0)"
+  "game_id": 3,
+  "display_name": "Conan the Copyright",
+  "faction_id": 1,
+  "loc_q": -1,
+  "loc_r": 0
 }
 ```
 

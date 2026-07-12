@@ -64,6 +64,16 @@ creation time default to `unixepoch()` (e.g. `accounts.created_at`). SQLite has
 no `ON UPDATE`, so the store sets `updated_at` on every write. `sessions` carries
 `issued_at`/`expires_at`/`revoked_at` in the same units.
 
+### Display names
+
+The `display_name` columns (`accounts`, `players`, `factions`, `entities`) are
+plain `TEXT` with **no** database-level format check. Their validation — a leading
+letter, then letters, digits, spaces, dashes, and quotes; UTF-8; and no characters
+that could confuse JSON or enable an XSS attack — is richer than a SQLite `CHECK`
+or `GLOB` can express, so it is enforced by the **API service**, not the database.
+(By contrast, `games.code` has a simple uppercase-alphanumeric rule that *is* a
+`CHECK`.)
+
 ### Ids
 
 The schema **standardizes on globally-unique ids**: every surrogate id is an
@@ -285,13 +295,15 @@ Distinct from a server-side account, but keyed by the same id as its
 - `UNIQUE (game_id, id)` — redundant, the FK target for `order_submissions`.
 - `display_name` — the player's in-game handle; the private seeds derive from it,
   so it is stable for the life of the game.
-- `email` — stored lowercased.
 - `start_q`, `start_r` — the starting province.
 - `password` — the plaintext order-authentication secret.
 - `seed1`, `seed2` — the player's private seeds.
 - `inactive` — boolean, default `0`.
-- `UNIQUE (game_id, email)`, `UNIQUE (game_id, display_name)` — both span active
-  and inactive rows.
+- `UNIQUE (game_id, display_name)` — spans active and inactive rows.
+
+There is **no** `email` column: a player's email is an `accounts` attribute,
+reached through the membership (`players.id → memberships.account_id →
+accounts.email`).
 
 ### `factions`
 
@@ -301,7 +313,7 @@ A group of entities under one controller — see
 - `id` — `INTEGER PRIMARY KEY AUTOINCREMENT`. Globally unique, never reused,
   aligning with the player_id.
 - `game_id` — `→ games(id)`. A plain column kept for querying.
-- `name` — `UNIQUE (game_id, name)`.
+- `display_name` — `UNIQUE (game_id, display_name)`.
 - `controller_kind` — `CHECK (controller_kind IN ('player', 'npc'))`.
 - `controller_id` — `CHECK (controller_id >= 1)`. It names a player or an NPC;
   because the target depends on `controller_kind` it is **not** a single foreign
@@ -319,7 +331,7 @@ faction and occupies one province (which may lie off the generated map).
 
 - `id` — `INTEGER PRIMARY KEY AUTOINCREMENT`. Globally unique, never reused.
 - `game_id` — `→ games(id)`. A plain column kept for querying.
-- `name` — a display label; need not be unique.
+- `display_name` — a display label; need not be unique.
 - `faction_id` — the owning faction;
   `FOREIGN KEY (game_id, faction_id) → factions(game_id, id)`, so an entity and
   its faction must be in the same game.
