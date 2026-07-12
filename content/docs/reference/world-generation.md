@@ -148,7 +148,7 @@ For `d = 1` the six are the origin's immediate neighbors:
 {{< callout type="warning" >}}
 On a large world the six defaults sit far from the center (distance
 `ceil(numberOfRings / 2)`), which a new GM may not expect. Choose a nearer ring
-with `--ring`, or edit `starting-provinces.json` afterward. Large worlds are
+with `--ring`, or edit the allowed set afterward. Large worlds are
 allowed; this is only a caution.
 {{< /callout >}}
 
@@ -156,34 +156,33 @@ The default set is a starting point that the GM may edit afterward. The current
 selection is purely geometric; it is expected to improve later (for example, a
 short walk from the computed hex toward better nearby terrain).
 
-### The allowed-provinces file
+### The allowed set
 
-The allowed set is stored in the `starting-provinces.json` file named in the
-game's manifest. It is a JSON array of provinces in canonical compact `(q,r)`
-form, in the order the GM added them:
+The allowed set is the `starting_provinces` table — one row per province,
+`(game_id, q, r)`. For example, three provinces of game `3`:
 
 ```json
 [
-  "(0,-2)",
-  "(2,-2)",
-  "(2,0)"
+  { "game_id": 3, "q": 0, "r": -2 },
+  { "game_id": 3, "q": 2, "r": -2 },
+  { "game_id": 3, "q": 2, "r": 0 }
 ]
 ```
 
-Rules for the file:
+Rules:
 
-- Each entry is a province coordinate in **canonical compact form** — `(q,r)`
-  with no spaces, no leading `+`, and no padding (for example `(-1,0)`, not
-  `(-1, 0)`).
-- Entries are **unique**: the same province may not appear twice.
-- **Order is preserved.** New provinces are appended; the order carries no
-  meaning but is kept stable so the file reads predictably.
-- A **missing file** and an **empty array** both mean "no starting provinces
-  defined". Player creation fails until at least one exists.
+- A row names a province by its `q`/`r` coordinates. In prose and orders a
+  province is written in **canonical compact form** — `(q,r)` with no spaces, no
+  leading `+`, and no padding (for example `(-1,0)`, not `(-1, 0)`).
+- Entries are **unique**: `(game_id, q, r)` is the primary key, so the same
+  province cannot appear twice in a game.
+- The set is **unordered**.
+- An **empty set** means "no starting provinces defined". Player creation fails
+  until at least one exists.
 
-Entries are validated for canonical form, uniqueness, and **existence**: a
-starting province must name a province that exists in the generated world.
-Naming a hex outside the world is rejected.
+A starting province must reference a province that **exists** in the generated
+world; a foreign key into `provinces` enforces it, so a hex outside the world is
+rejected.
 
 ### Managing the set
 

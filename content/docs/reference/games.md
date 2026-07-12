@@ -4,76 +4,53 @@ weight: 1
 ---
 
 A **game** is the top-level unit of play. Everything else — the world, the
-players — belongs to a game. A game is described by a manifest file,
-`game.json`.
+players — belongs to a game.
 
 ## Identity
 
-Every game has an id and a pair of master seeds. It also tracks its current
-turn.
+Every game has an id and a code. It also has a pair of master seeds and tracks
+its current turn.
 
-### ID
+### ID and code
 
-- A short slug the GM chooses to name the game.
-- Quoted text with the same character restrictions as a
-  [password]({{< relref "/docs/reference/players.md#password" >}}): it contains
-  no characters that require escaping in JSON and none that could be confused
-  with an ASCII space.
-- It is the first field of an orders file's opening record.
+- **`code`** — a short slug the GM chooses to name the game: uppercase letters
+  and digits, 1–6 characters, unique. It is the first field of an orders file's
+  opening record.
+- **`id`** — a surrogate integer the engine assigns; every other record refers to
+  the game by this id. See the
+  [SQL Schema]({{< relref "/docs/reference/sql-schema.md#games" >}}).
 
 ### Master seeds
 
 - Two `uint64` values, `seed1` and `seed2`, that make the game deterministic.
 - They are the root of every random outcome in the game (see
-  [Seeds and subsystems](#seeds-and-subsystems)).
+  [Seeds and subsystems](#seeds-and-subsystems)), stored in `game_engine_state`.
 
 ### Current turn
 
-- The turn the game is on now, stored in the manifest as `turn`.
+- The turn the game is on now, `game_engine_state.current_turn`.
 - A new game starts at turn `0` (setup — no turn); play begins at turn `1`. See
   [Turns]({{< relref "/docs/reference/turns.md" >}}).
 
-## Manifest
+## Storage
 
-A game is stored as a `game.json` manifest. It records the game's id, master
-seeds, and current turn, and maps each of the game's data files to a location:
+A game is stored across two tables (see the
+[SQL Schema]({{< relref "/docs/reference/sql-schema.md" >}})): `games` holds its
+identity, and `game_engine_state` holds the engine's per-game state — the master
+seeds and current turn — kept separate from the identity row.
 
 ```json
 {
-  "id": "smoke-test-1",
-  "seeds": { "seed1": 12345, "seed2": 67890 },
-  "turn": 0,
-  "files": {
-    "world": "./world.json",
-    "players": "./players.json",
-    "factions": "./factions.json",
-    "entities": "./entities.json",
-    "orders": "./orders",
-    "turns": "./turns",
-    "reports": "./reports",
-    "starting-provinces": "./starting-provinces.json",
-    "terrain-translation": "./terrain-translation.json"
-  }
+  "games":             { "id": 3, "code": "SMOKE1" },
+  "game_engine_state": { "game_id": 3, "seed1": 12345, "seed2": 67890, "current_turn": 0 }
 }
 ```
 
-- Each file path is resolved relative to the directory that contains
-  `game.json`.
-- A path may point outside that directory, so two games can share a file (for
-  example, a common `world.json`) while keeping the rest separate. This is a
-  convenience for development and testing.
-
-A player's submitted orders are stored under the `orders` directory, one file
-per turn per player, keyed by turn and player id.
-
-The result of processing a turn is stored under the `turns` directory, one
-subdirectory per turn (keyed by turn), holding that turn's processing output.
-See [Turn Processing]({{< relref "/docs/reference/turn-processing.md" >}}).
-
-Each player's turn [report]({{< relref "/docs/reference/reports.md" >}}) is
-stored under the `reports` directory, one subdirectory per turn (keyed by turn)
-holding one file per active player (keyed by player id). Reports are written in
-a structured JSON model; a human-readable presentation format is future work.
+The rest of a game's data — its world, players, factions, entities, submitted
+orders, and processed-turn results — lives in its own tables, each scoped to the
+game by `game_id`. Submitted orders are keyed by game, turn, and player; turn
+results by game and turn. See
+[Turn Processing]({{< relref "/docs/reference/turn-processing.md" >}}).
 
 ## Seeds and subsystems
 
@@ -87,15 +64,10 @@ its own master seeds from the game's, deterministically:
   [Players]({{< relref "/docs/reference/players.md" >}}).
 
 A subsystem's derived seeds are stored with the subsystem's own data — the
-world's in `world.json`, a player's in the player record — so the subsystem
+world's in the `worlds` row, a player's in the `players` row — so the subsystem
 carries everything it needs to reproduce its randomness on its own. This lets a
 scenario be exercised without standing up a whole game, which is convenient when
 writing and testing code.
-
-Because those seeds were derived from one game's master seeds, a data file
-belongs to the game that created it. Sharing a data file between games is a
-convenience for development and testing only; production games do not share data
-files.
 
 ## See also
 
