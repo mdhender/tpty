@@ -7,19 +7,23 @@
 //
 // # Opening an instance
 //
-// Three open modes cover the callers' needs. All of them enable foreign-key
+// The open modes cover the callers' needs. All of them enable foreign-key
 // enforcement (PRAGMA foreign_keys = ON) on every connection, which the schema's
 // foreign keys require and SQLite leaves off by default.
 //
-//   - [OpenPersistent] opens the on-disk instance in a directory (the package
-//     owns the file name under it), creating and migrating it up as needed, in
-//     WAL mode.
+//   - [CreatePersistent] is the ONLY function that brings an on-disk instance
+//     into being: it creates the database file in an existing directory and
+//     migrates it up. It never creates the directory, and refuses to overwrite
+//     an existing instance.
+//   - [OpenPersistent] opens an EXISTING on-disk instance and migrates it up, in
+//     WAL mode. It never creates anything — not the directory, not the file (the
+//     package owns the file name under the directory).
 //   - [OpenTemporary] opens an in-memory instance and migrates it up — unique
 //     when unnamed, or shared by name — chiefly for tests.
 //   - [OpenNonMigrating] opens an existing file without migrating it, for the tdb
 //     commands that must not alter the instance (backup, compact, version).
 //
-// All three return a [DB]: borrow a connection with [DB.Get], return it with
+// They each return a [DB]: borrow a connection with [DB.Get], return it with
 // [DB.Put], and [DB.Close] the pool when done.
 //
 // # Migrations and versioning

@@ -9,10 +9,23 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
+	"github.com/mdhender/tpty/internal/cerrs"
 	"zombiezen.com/go/sqlite"
 	"zombiezen.com/go/sqlite/sqlitemigration"
 	"zombiezen.com/go/sqlite/sqlitex"
+)
+
+const (
+	// ErrInvalidPath is returned when a directory argument is missing or is not a
+	// directory. The store never creates directories, so a bad path is a hard
+	// error, never something to create.
+	ErrInvalidPath = cerrs.Error("invalid path")
+	// ErrNotExist is returned by OpenPersistent when the directory exists but
+	// holds no instance. Bringing an instance into being is CreatePersistent's
+	// job, never OpenPersistent's.
+	ErrNotExist = cerrs.Error("instance does not exist")
 )
 
 // dbFilename is the file name the store owns under a persistent instance's
@@ -20,18 +33,49 @@ import (
 // companion -wal / -shm files that appear beside it).
 const dbFilename = "tpty.db"
 
+// InstanceExists reports whether a persistent instance already exists in dir. It
+// lets a caller distinguish "create a new instance" from "operate on an existing
+// one" without knowing the file name the package owns.
+func InstanceExists(dir string) (bool, error) {
+	_, err := os.Stat(filepath.Join(dir, dbFilename))
+	switch {
+	case err == nil:
+		return true, nil
+	case os.IsNotExist(err):
+		return false, nil
+	default:
+		return false, fmt.Errorf("sqlite: %w", err)
+	}
+}
+
 // Open flags per mode. Every mode sets OpenURI so the URI query string is
-// honored. Persistent and non-migrating instances use WAL; the in-memory
-// temporary instances do not (WAL has no meaning for an in-memory database).
+// honored. On-disk instances use WAL; the in-memory temporary instances do not
+// (WAL has no meaning for an in-memory database).
+//
+// Only createFlags and temporaryFlags include OpenCreate. persistentFlags and
+// nonMigratingFlags deliberately do NOT — an on-disk instance is only ever
+// brought into being by CreatePersistent.
 const (
-	// persistentFlags create the file if absent and migrate it up.
-	persistentFlags = sqlite.OpenReadWrite | sqlite.OpenCreate | sqlite.OpenWAL | sqlite.OpenURI
+	// persistentFlags open an EXISTING on-disk instance read-write and migrate it
+	// up. No OpenCreate: OpenPersistent never creates a file.
+	persistentFlags = sqlite.OpenReadWrite | sqlite.OpenWAL | sqlite.OpenURI
+	// createFlags additionally create the database file. Used only by
+	// CreatePersistent, the sole function that may bring an instance into being.
+	createFlags = persistentFlags | sqlite.OpenCreate
 	// temporaryFlags open an in-memory database (mode=memory in the URI).
 	temporaryFlags = sqlite.OpenReadWrite | sqlite.OpenCreate | sqlite.OpenURI
 	// nonMigratingFlags open an existing file without creating or migrating it;
 	// used by the tdb commands that must not alter the instance.
 	nonMigratingFlags = sqlite.OpenReadWrite | sqlite.OpenWAL | sqlite.OpenURI
 )
+
+// openTimeout bounds the initial open + migration of an on-disk instance.
+// sqlitemigration retries a failing open indefinitely (a server-startup
+// convenience) rather than returning the error, so without a deadline a corrupt
+// or foreign database file would hang the caller. Real migrations here complete
+// in milliseconds; this is only a safety net against a doomed open. It is a var
+// solely so tests can shorten it.
+var openTimeout = 30 * time.Second
 
 // pool is the subset of *sqlitemigration.Pool and *sqlitex.Pool that DB needs.
 // Both concrete pools satisfy it (their Get signatures differ, but Take, Put,
@@ -49,26 +93,80 @@ type DB struct {
 	pool pool
 }
 
-// OpenPersistent opens the instance held in dir, creating and migrating it up as
-// needed. dir is the directory that holds the instance, NOT a file name — the
-// package owns the file name (dbFilename) under it. The directory is created if
-// absent. Every connection runs PRAGMA foreign_keys = ON and uses WAL.
+// OpenPersistent opens the EXISTING instance held in dir and migrates it up. dir
+// is the directory that holds the instance, NOT a file name — the package owns
+// the file name (dbFilename) under it.
+//
+// OpenPersistent never creates anything: not the directory, not the database
+// file. The directory must already exist (else ErrInvalidPath) and must already
+// hold an instance (else ErrNotExist) — an absent database file is an error
+// rather than a fresh, empty instance. Bringing a new instance into being is the
+// sole responsibility of CreatePersistent. Every connection runs PRAGMA
+// foreign_keys = ON and uses WAL.
 //
 // Open fails if the on-disk migration version is NEWER than this binary's
 // ExpectedVersion: sqlitemigration only migrates up (it no-ops a database at or
 // above the versions it knows), so running against a future schema would
 // silently misbehave. That is caught by a post-open user_version guard.
 func OpenPersistent(ctx context.Context, dir string) (*DB, error) {
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return nil, fmt.Errorf("sqlite: %w", err)
+	if err := requireDir(dir); err != nil {
+		return nil, err
 	}
+	// The instance file must already exist. Beyond honoring "never create", this
+	// keeps a missing file away from sqlitemigration, which retries a failing
+	// open indefinitely (a server-startup convenience) rather than returning the
+	// error — so a doomed URI would hang, not fail.
+	if exists, err := InstanceExists(dir); err != nil {
+		return nil, err
+	} else if !exists {
+		return nil, ErrNotExist
+	}
+	return openMigrating(ctx, dir, persistentFlags)
+}
+
+// CreatePersistent creates a new on-disk instance in dir and migrates it up. It
+// is the ONLY function in the package that may bring an on-disk instance into
+// being — and even it will not create the directory: dir must already exist
+// (else ErrInvalidPath). It refuses to run when an instance already exists there
+// (use OpenPersistent to open one that does).
+func CreatePersistent(ctx context.Context, dir string) (*DB, error) {
+	if err := requireDir(dir); err != nil {
+		return nil, err
+	}
+	if exists, err := InstanceExists(dir); err != nil {
+		return nil, err
+	} else if exists {
+		return nil, fmt.Errorf("sqlite: an instance already exists in %s", dir)
+	}
+	return openMigrating(ctx, dir, createFlags)
+}
+
+// requireDir returns ErrInvalidPath unless dir exists and is a directory. The
+// store never creates directories, so a bad path is a hard error.
+func requireDir(dir string) error {
+	if sb, err := os.Stat(dir); err != nil || !sb.IsDir() {
+		return ErrInvalidPath
+	}
+	return nil
+}
+
+// openMigrating opens dir's instance through the migrating pool with the given
+// flags and applies the newer-than-expected guard. Callers MUST have already
+// validated the directory and the instance file's presence/absence to match
+// flags: sqlitemigration retries a failing open indefinitely rather than
+// returning the error, so a doomed URI must never reach it.
+func openMigrating(ctx context.Context, dir string, flags sqlite.OpenFlags) (*DB, error) {
 	uri := "file:" + filepath.Join(dir, dbFilename)
 	p := sqlitemigration.NewPool(uri, schema(), sqlitemigration.Options{
-		Flags:       persistentFlags,
+		Flags:       flags,
 		PrepareConn: prepareConn,
 	})
 	db := &DB{pool: p}
-	if err := db.checkVersion(ctx); err != nil {
+	// Bound the initial open + migrate so a doomed open errors instead of
+	// hanging (see openTimeout).
+	vctx, cancel := context.WithTimeout(ctx, openTimeout)
+	defer cancel()
+	if err := db.checkVersion(vctx); err != nil {
 		_ = db.Close()
 		return nil, err
 	}
@@ -124,6 +222,90 @@ func OpenNonMigrating(ctx context.Context, dir string) (*DB, error) {
 		return nil, err
 	}
 	return db, nil
+}
+
+// backupStampLayout formats (in UTC) the timestamp suffix of a backup file name.
+// A literal trailing "Z" is appended separately so Go does not read it as a
+// timezone directive.
+const backupStampLayout = "20060102T150405"
+
+// Backup writes a consistent, compacted copy of the instance in dir into the
+// outputPath folder and returns the path of the file it wrote. The caller
+// chooses only the folder — never the file name: the backup is always the
+// instance's own file name with a UTC timestamp suffix (e.g.
+// "tpty.db.20260712T213106Z"). outputPath defaults to dir when empty and must
+// already exist; the store never creates directories. The source is opened
+// non-migrating and is not modified.
+func Backup(ctx context.Context, dir, outputPath string) (string, error) {
+	if exists, err := InstanceExists(dir); err != nil {
+		return "", err
+	} else if !exists {
+		return "", ErrNotExist
+	}
+	if outputPath == "" {
+		outputPath = dir
+	}
+	if err := requireDir(outputPath); err != nil {
+		return "", fmt.Errorf("sqlite: backup folder %s: %w", outputPath, err)
+	}
+
+	stamp := time.Now().UTC().Format(backupStampLayout) + "Z"
+	target := filepath.Join(outputPath, dbFilename+"."+stamp)
+	if _, err := os.Stat(target); err == nil {
+		return "", fmt.Errorf("sqlite: backup target %s already exists", target)
+	} else if !os.IsNotExist(err) {
+		return "", fmt.Errorf("sqlite: %w", err)
+	}
+
+	db, err := OpenNonMigrating(ctx, dir)
+	if err != nil {
+		return "", err
+	}
+	defer db.Close()
+
+	conn, err := db.Get(ctx)
+	if err != nil {
+		return "", err
+	}
+	defer db.Put(conn)
+
+	// VACUUM INTO reads the source and writes a fresh, compacted copy to the
+	// target; it does not modify the source.
+	if err := sqlitex.ExecuteTransient(conn, "VACUUM INTO ?;", &sqlitex.ExecOptions{
+		Args: []any{target},
+	}); err != nil {
+		return "", fmt.Errorf("sqlite: backup: %w", err)
+	}
+	return target, nil
+}
+
+// Compact runs VACUUM on the instance in dir, reclaiming free space in place. It
+// opens the instance non-migrating (it does not migrate the schema) and is an
+// offline operation — the caller must ensure no other process is using the
+// instance.
+func Compact(ctx context.Context, dir string) error {
+	if exists, err := InstanceExists(dir); err != nil {
+		return err
+	} else if !exists {
+		return ErrNotExist
+	}
+
+	db, err := OpenNonMigrating(ctx, dir)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	conn, err := db.Get(ctx)
+	if err != nil {
+		return err
+	}
+	defer db.Put(conn)
+
+	if err := sqlitex.ExecuteTransient(conn, "VACUUM;", nil); err != nil {
+		return fmt.Errorf("sqlite: compact: %w", err)
+	}
+	return nil
 }
 
 // Get borrows a connection from the pool, blocking until one is available or ctx

@@ -4,9 +4,12 @@ package sqlite
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"zombiezen.com/go/sqlite"
 	"zombiezen.com/go/sqlite/sqlitex"
@@ -101,36 +104,147 @@ func TestFullGameTeardown(t *testing.T) {
 	})
 }
 
-// TestOpenPersistent covers create + migrate: a fresh directory is migrated to
-// ExpectedVersion, the file is created under the directory, and the schema is
-// present.
-func TestOpenPersistent(t *testing.T) {
+// TestCreateAndOpenPersistent covers the split between the sole creator and the
+// open-existing path: CreatePersistent brings a fresh instance into being under
+// an existing directory and migrates it to ExpectedVersion; OpenPersistent then
+// re-opens that existing instance.
+func TestCreateAndOpenPersistent(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
 
-	db, err := OpenPersistent(ctx, dir)
+	db, err := CreatePersistent(ctx, dir)
 	if err != nil {
-		t.Fatalf("OpenPersistent: %v", err)
+		t.Fatalf("CreatePersistent: %v", err)
 	}
-	defer db.Close()
 
 	if v, err := db.UserVersion(ctx); err != nil {
 		t.Fatalf("UserVersion: %v", err)
 	} else if v != ExpectedVersion() {
 		t.Errorf("user_version = %d, want ExpectedVersion %d", v, ExpectedVersion())
 	}
-
 	if _, err := os.Stat(filepath.Join(dir, dbFilename)); err != nil {
 		t.Errorf("expected %s on disk: %v", dbFilename, err)
 	}
-
 	// The schema migrated: a known table exists.
-	if n := countT(t, db, "sqlite_master"); n == 0 {
-		t.Error("sqlite_master is empty; schema did not migrate")
-	}
 	if !tableExists(t, db, "games") {
 		t.Error("games table missing after migrate")
 	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	// OpenPersistent re-opens the now-existing instance.
+	reopened, err := OpenPersistent(ctx, dir)
+	if err != nil {
+		t.Fatalf("OpenPersistent on an existing instance: %v", err)
+	}
+	defer reopened.Close()
+	if v, err := reopened.UserVersion(ctx); err != nil {
+		t.Fatalf("UserVersion: %v", err)
+	} else if v != ExpectedVersion() {
+		t.Errorf("reopened user_version = %d, want %d", v, ExpectedVersion())
+	}
+}
+
+// TestOpenPersistentNeverCreatesFile is the core guarantee: given an existing
+// but empty directory, OpenPersistent must fail rather than create a fresh
+// database file. Creation belongs solely to CreatePersistent.
+func TestOpenPersistentNeverCreatesFile(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir() // exists, but holds no instance
+
+	db, err := OpenPersistent(ctx, dir)
+	if err == nil {
+		db.Close()
+		t.Fatal("OpenPersistent on an empty directory = nil error, want ErrNotExist")
+	}
+	if !errors.Is(err, ErrNotExist) {
+		t.Errorf("error = %v, want ErrNotExist", err)
+	}
+
+	// Nothing may have been created — not the database file nor its WAL companions.
+	for _, name := range []string{dbFilename, dbFilename + "-wal", dbFilename + "-shm"} {
+		if _, statErr := os.Stat(filepath.Join(dir, name)); !os.IsNotExist(statErr) {
+			t.Errorf("OpenPersistent created %s; it must never create a file", name)
+		}
+	}
+}
+
+// TestCreatePersistent covers the creator's own guards: it refuses to overwrite
+// an existing instance, and it will not create the directory.
+func TestCreatePersistent(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("refuses an existing instance", func(t *testing.T) {
+		dir := t.TempDir()
+		db, err := CreatePersistent(ctx, dir)
+		if err != nil {
+			t.Fatalf("CreatePersistent: %v", err)
+		}
+		db.Close()
+
+		if again, err := CreatePersistent(ctx, dir); err == nil {
+			again.Close()
+			t.Fatal("CreatePersistent over an existing instance = nil error, want failure")
+		}
+	})
+
+	t.Run("does not create the directory", func(t *testing.T) {
+		missing := filepath.Join(t.TempDir(), "nope")
+		if _, err := CreatePersistent(ctx, missing); !errors.Is(err, ErrInvalidPath) {
+			t.Fatalf("CreatePersistent on a missing directory = %v, want ErrInvalidPath", err)
+		}
+		if _, statErr := os.Stat(missing); !os.IsNotExist(statErr) {
+			t.Errorf("CreatePersistent created %s; it must not create the directory", missing)
+		}
+	})
+}
+
+// TestOpenPersistentRequiresExistingDir confirms OpenPersistent is a hard error
+// when the directory does not exist, and — critically — does NOT create it (or
+// any parent) on the fly. Auto-creating directories would let a stray path
+// scatter empty database instances across the filesystem.
+func TestOpenPersistentRequiresExistingDir(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("missing directory", func(t *testing.T) {
+		missing := filepath.Join(t.TempDir(), "does-not-exist")
+
+		db, err := OpenPersistent(ctx, missing)
+		if err == nil {
+			db.Close()
+			t.Fatal("OpenPersistent on a missing directory = nil error, want ErrInvalidPath")
+		}
+		if !errors.Is(err, ErrInvalidPath) {
+			t.Errorf("error = %v, want ErrInvalidPath", err)
+		}
+		if _, statErr := os.Stat(missing); !os.IsNotExist(statErr) {
+			t.Errorf("OpenPersistent created %s; it must not create the directory", missing)
+		}
+	})
+
+	t.Run("missing nested path is not created", func(t *testing.T) {
+		base := t.TempDir()
+		nested := filepath.Join(base, "a", "b", "c")
+
+		if _, err := OpenPersistent(ctx, nested); !errors.Is(err, ErrInvalidPath) {
+			t.Fatalf("OpenPersistent on a missing nested path = %v, want ErrInvalidPath", err)
+		}
+		if _, statErr := os.Stat(filepath.Join(base, "a")); !os.IsNotExist(statErr) {
+			t.Errorf("OpenPersistent created intermediate directories under %s; it must not", base)
+		}
+	})
+
+	t.Run("path is a file, not a directory", func(t *testing.T) {
+		file := filepath.Join(t.TempDir(), "not-a-dir")
+		if err := os.WriteFile(file, []byte("x"), 0o644); err != nil {
+			t.Fatalf("WriteFile: %v", err)
+		}
+
+		if _, err := OpenPersistent(ctx, file); !errors.Is(err, ErrInvalidPath) {
+			t.Fatalf("OpenPersistent on a file path = %v, want ErrInvalidPath", err)
+		}
+	})
 }
 
 // TestOpenTemporaryUnique confirms two unnamed temporary instances are isolated.
@@ -168,9 +282,9 @@ func TestNewerVersionGuard(t *testing.T) {
 	dir := t.TempDir()
 
 	// Create and migrate normally.
-	db, err := OpenPersistent(ctx, dir)
+	db, err := CreatePersistent(ctx, dir)
 	if err != nil {
-		t.Fatalf("OpenPersistent: %v", err)
+		t.Fatalf("CreatePersistent: %v", err)
 	}
 	if err := db.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
@@ -218,6 +332,103 @@ func TestNonMigratingLeavesUntouched(t *testing.T) {
 		t.Fatalf("UserVersion: %v", err)
 	} else if v != 0 {
 		t.Errorf("user_version = %d, want 0 (non-migrating open must not migrate)", v)
+	}
+}
+
+// TestBackupAndCompact covers the store-owned backup and compact operations: the
+// backup file is named for the instance with a timestamp suffix, lands in the
+// chosen (or defaulted) folder, never in a missing one, and compact runs in
+// place.
+func TestBackupAndCompact(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	db, err := CreatePersistent(ctx, dir)
+	if err != nil {
+		t.Fatalf("CreatePersistent: %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	t.Run("backup into an explicit folder", func(t *testing.T) {
+		dest := t.TempDir()
+		target, err := Backup(ctx, dir, dest)
+		if err != nil {
+			t.Fatalf("Backup: %v", err)
+		}
+		// The caller chose only the folder; the store names the file.
+		wantPrefix := filepath.Join(dest, dbFilename+".")
+		if !strings.HasPrefix(target, wantPrefix) {
+			t.Errorf("target = %q, want prefix %q", target, wantPrefix)
+		}
+		if fi, err := os.Stat(target); err != nil {
+			t.Fatalf("stat backup: %v", err)
+		} else if fi.Size() == 0 {
+			t.Errorf("backup %s is empty", target)
+		}
+	})
+
+	t.Run("backup defaults to the instance's own folder", func(t *testing.T) {
+		target, err := Backup(ctx, dir, "")
+		if err != nil {
+			t.Fatalf("Backup: %v", err)
+		}
+		if got := filepath.Dir(target); got != dir {
+			t.Errorf("default backup landed in %s, want %s", got, dir)
+		}
+	})
+
+	t.Run("backup into a missing folder errors and creates nothing", func(t *testing.T) {
+		missing := filepath.Join(t.TempDir(), "nope")
+		if _, err := Backup(ctx, dir, missing); err == nil {
+			t.Fatal("Backup into a missing folder = nil, want error")
+		}
+		if _, err := os.Stat(missing); !os.IsNotExist(err) {
+			t.Errorf("Backup created %s; it must not", missing)
+		}
+	})
+
+	t.Run("compact runs in place", func(t *testing.T) {
+		if err := Compact(ctx, dir); err != nil {
+			t.Fatalf("Compact: %v", err)
+		}
+	})
+
+	t.Run("backup and compact reject a missing instance", func(t *testing.T) {
+		empty := t.TempDir()
+		if _, err := Backup(ctx, empty, empty); !errors.Is(err, ErrNotExist) {
+			t.Errorf("Backup on an empty dir = %v, want ErrNotExist", err)
+		}
+		if err := Compact(ctx, empty); !errors.Is(err, ErrNotExist) {
+			t.Errorf("Compact on an empty dir = %v, want ErrNotExist", err)
+		}
+	})
+}
+
+// TestOpenTimesOutOnDoomedFile pins the safety net: a file that exists (so it
+// passes the precondition checks) but is not a valid database must make the
+// migrating open time out and return an error, rather than hang forever on
+// sqlitemigration's infinite open-retry.
+func TestOpenTimesOutOnDoomedFile(t *testing.T) {
+	dir := t.TempDir()
+	// A non-SQLite file at the instance's path: preconditions pass, migration fails.
+	if err := os.WriteFile(filepath.Join(dir, dbFilename), []byte("not a database"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	// Shorten the safety-net timeout so the test does not wait 30s.
+	restore := openTimeout
+	openTimeout = 500 * time.Millisecond
+	defer func() { openTimeout = restore }()
+
+	start := time.Now()
+	db, err := OpenPersistent(context.Background(), dir)
+	if err == nil {
+		db.Close()
+		t.Fatal("OpenPersistent on a doomed file = nil, want a timeout error")
+	}
+	if elapsed := time.Since(start); elapsed > 10*time.Second {
+		t.Errorf("OpenPersistent took %s; the open-timeout did not bound it", elapsed)
 	}
 }
 

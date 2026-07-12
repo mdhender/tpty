@@ -10,6 +10,7 @@ prompts/
 # build products
 /hexover
 /mapgen
+/tdb
 /tpty
 
 # Hugo
