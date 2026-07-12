@@ -3,10 +3,11 @@ title: Administer a database with tdb
 weight: 11
 ---
 
-This guide walks an operator through administering a T'Pty SQLite database with
-`tdb`: creating and migrating a database, checking its versions, creating an
-account, backing it up, and compacting it. For the relational model behind the
-database, see [SQL Schema]({{< relref "/docs/reference/sql-schema.md" >}}).
+This guide walks an [operator]({{< relref "/docs/reference/glossary.md" >}})
+through administering a T'Pty SQLite database with `tdb`: creating and migrating
+a database, checking its versions, creating an account, backing it up, and
+compacting it. For the relational model behind the database, see
+[SQL Schema]({{< relref "/docs/reference/sql-schema.md" >}}).
 
 Two conventions run through every command:
 
