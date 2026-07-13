@@ -96,3 +96,9 @@ Definitions of terms used across the reference.
 : What a player receives at the start of a turn, describing their factions and
   entities at the start of that turn; the basis for the player's orders. See
   [Reports]({{< relref "/docs/reference/reports.md" >}}).
+
+**Wraparound**
+: The finite map's edge behavior: a step off the outer ring re-enters on the far
+  side rather than falling off. Stored locations are always canonicalized back
+  onto the map. See
+  [Map Wraparound]({{< relref "/docs/reference/map-wraparound.md" >}}).
