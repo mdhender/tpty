@@ -56,20 +56,21 @@ CREATE TABLE accounts (
 );
 
 -- sessions authenticate API requests. A session is minted at login; the client
--- presents its token as an opaque bearer credential. The token is a hex-encoded
--- random N-bit value — high enough entropy that it is stored as-is (NOT hashed)
--- and looked up directly. id is a separate, public session identifier used to
--- address a session in the API (e.g. to revoke one). Revocation records WHEN via
--- revoked_at (NULL = active) rather than the inactive flag the other tables use,
--- because the API reports on and reasons about session lifetime. Timestamps are
--- Unix seconds (UTC).
+-- presents its token as an opaque bearer credential. The raw token is a
+-- high-entropy random value shown to the client once; only its SHA-256 hash is
+-- stored (hashed_token) and the auth middleware resolves a presented token by
+-- hashing it and matching the hash. id is a separate, public session identifier
+-- used to address a session in the API (e.g. to revoke one). Revocation records
+-- WHEN via revoked_at (NULL = active) rather than the inactive flag the other
+-- tables use, because the API reports on and reasons about session lifetime.
+-- Timestamps are Unix seconds (UTC).
 CREATE TABLE sessions (
-    id         TEXT NOT NULL PRIMARY KEY,                -- opaque public session id
-    account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE, -- the effective identity
-    token      TEXT NOT NULL UNIQUE,                     -- hex-encoded random bearer token (stored as-is)
-    issued_at  INTEGER NOT NULL,                         -- Unix seconds (UTC)
-    expires_at INTEGER NOT NULL,                         -- Unix seconds (UTC)
-    revoked_at INTEGER                                   -- NULL = active; set = revoked
+    id           TEXT NOT NULL PRIMARY KEY,              -- opaque public session id
+    account_id   INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE, -- the effective identity
+    hashed_token TEXT NOT NULL UNIQUE,                   -- SHA-256 hash of the bearer token (raw token never stored)
+    issued_at    INTEGER NOT NULL,                       -- Unix seconds (UTC)
+    expires_at   INTEGER NOT NULL,                       -- Unix seconds (UTC)
+    revoked_at   INTEGER                                 -- NULL = active; set = revoked
 );
 
 CREATE INDEX sessions_by_account ON sessions(account_id);

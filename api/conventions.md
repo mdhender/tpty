@@ -18,11 +18,12 @@ next call.
 
 Two distinct secrets, stored two different ways (see the SQL Schema reference):
 
-- The **account secret** is stored as a **bcrypt** hash (`accounts.password_hash`).
-  It is verified on login and on the sensitive self-service routes
-  (`POST /me/email`, `POST /me/secret`).
-- The **session token** is high-entropy and stored **as-is, not hashed**
-  (`sessions.token`); the server resolves it by equality.
+- The **account secret** is low-entropy, so it is stored as a **bcrypt** hash
+  (`accounts.password_hash`). It is verified on login and on the sensitive
+  self-service routes (`POST /me/email`, `POST /me/secret`).
+- The **session token** is high-entropy, so only its **SHA-256 hash** is stored
+  (`sessions.hashed_token`); the raw token is shown once, at login, and never
+  stored. The server hashes a presented token and resolves it by equality.
 
 Email is stored lowercased and matched case-insensitively.
 

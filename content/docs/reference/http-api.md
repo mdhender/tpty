@@ -27,9 +27,11 @@ Routes are served from the **root** with **no version segment** (`GET /healthz`,
 `Authorization: Bearer <token>`.
 
 - The **account secret** is verified against the bcrypt `accounts.password_hash`.
-- The **session token** is high-entropy and stored **as-is, not hashed** in
-  `sessions.token`; the server resolves it by equality on every request, so
-  revocation (and account deactivation) takes effect immediately.
+- The **session token** is high-entropy; only its **SHA-256 hash** is stored, in
+  `sessions.hashed_token` (the raw token is shown once, at login, and never
+  stored). The server hashes a presented token and resolves it by equality on
+  every request, so revocation (and account deactivation) takes effect
+  immediately.
 
 A session authenticates while `revoked_at IS NULL AND expires_at > now`.
 

@@ -22,10 +22,12 @@ info:
 
 
     Authentication is an opaque, server-side **session token** presented as a
-    bearer credential. Unlike the account secret (a bcrypt hash), the session
-    token is high-entropy and stored **as-is, not hashed**; the server resolves it
-    by equality against the `sessions` table on every request, so revocation is
-    immediate. Routes are unversioned and served from the root.
+    bearer credential. Unlike the account secret (a bcrypt hash of a low-entropy
+    password), the session token is high-entropy, so only its **SHA-256 hash** is
+    stored; the raw token is shown once, at login, and never stored. The server
+    hashes a presented token and resolves it by equality against the `sessions`
+    table on every request, so revocation is immediate. Routes are unversioned and
+    served from the root.
   version: 0.1.0
 servers:
   - url: /
@@ -475,10 +477,12 @@ components:
       description: >-
         An opaque, server-side session token minted by `/auth/login` and
         presented as `Authorization: Bearer <token>`. Not a JWT — it carries no
-        claims. It is high-entropy and stored **as-is, not hashed** (unlike the
-        bcrypt `accounts.password_hash`); the server resolves it by equality
-        against the `sessions` table on every request, so revocation is immediate.
-        A session authenticates when `revoked_at IS NULL AND expires_at > now`.
+        claims. It is high-entropy, so only its **SHA-256 hash** is stored (unlike
+        the bcrypt `accounts.password_hash`); the raw token is shown once, at
+        login, and never stored. The server hashes a presented token and resolves
+        it by equality against the `sessions` table on every request, so
+        revocation is immediate. A session authenticates when
+        `revoked_at IS NULL AND expires_at > now`.
   parameters:
     AccountId:
       name: accountId

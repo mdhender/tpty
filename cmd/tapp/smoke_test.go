@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mdhender/tpty/internal/server"
 	"github.com/mdhender/tpty/internal/stores/sqlite"
 	"golang.org/x/crypto/bcrypt"
 	zsqlite "zombiezen.com/go/sqlite"
@@ -56,23 +57,39 @@ func TestOpenServeDBPersistentRejectsMissing(t *testing.T) {
 	}
 }
 
-// TestHealthzAndRouting pins that GET /healthz returns 200 and any other route
-// 404s (the router is otherwise empty until #76).
+// TestHealthzAndRouting pins that GET /healthz returns 200 and an unknown route
+// 404s through the real server handler (routing now lives in internal/server).
 func TestHealthzAndRouting(t *testing.T) {
-	mux := newMux()
+	h := newTestHandler(t)
 
-	if code := record(mux, http.MethodGet, "/healthz"); code != http.StatusOK {
+	if code := record(h, http.MethodGet, "/healthz"); code != http.StatusOK {
 		t.Errorf("GET /healthz = %d, want 200", code)
 	}
 
-	if code := record(mux, http.MethodGet, "/nope"); code != http.StatusNotFound {
+	if code := record(h, http.MethodGet, "/nope"); code != http.StatusNotFound {
 		t.Errorf("GET /nope = %d, want 404", code)
 	}
 
-	// /healthz is liveness-only: a non-GET method must not match.
-	if code := record(mux, http.MethodPost, "/healthz"); code != http.StatusMethodNotAllowed && code != http.StatusNotFound {
+	// /healthz is liveness-only: a non-GET method must not reach the 200 body.
+	if code := record(h, http.MethodPost, "/healthz"); code != http.StatusMethodNotAllowed && code != http.StatusNotFound {
 		t.Errorf("POST /healthz = %d, want 405 or 404", code)
 	}
+}
+
+// newTestHandler builds the real server handler over a fresh in-memory store, so
+// the cmd-level routing tests exercise the same handler serve wires up.
+func newTestHandler(t *testing.T) http.Handler {
+	t.Helper()
+	db, err := sqlite.OpenTemporary(context.Background(), "")
+	if err != nil {
+		t.Fatalf("open temporary db: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	srv, err := server.New(db, "0.0.0-test", nil, server.WithBcryptCost(bcrypt.MinCost))
+	if err != nil {
+		t.Fatalf("build server: %v", err)
+	}
+	return srv.Handler()
 }
 
 // TestServeOnGracefulShutdown drives the real server lifecycle: bind an
@@ -86,7 +103,7 @@ func TestServeOnGracefulShutdown(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- serveOn(ctx, ln, newMux()) }()
+	go func() { done <- serveOn(ctx, ln, newTestHandler(t)) }()
 
 	// The server is up: hit /healthz over the real listener.
 	url := "http://" + ln.Addr().String() + "/healthz"
