@@ -195,10 +195,12 @@ presents its `token` as an opaque bearer credential.
 - `account_id` — `→ accounts(id)`, `ON DELETE CASCADE`, the effective identity.
   Deleting an account drops its sessions (they authenticate that account and
   nothing else), matching `memberships.account_id`.
-- `token` — the bearer credential, `UNIQUE`. A hex-encoded random N-bit value —
-  high enough entropy that it is stored **as-is, not hashed** (unlike
-  `accounts.password_hash`, which is bcrypt). The auth middleware resolves it by
-  equality.
+- `hashed_token` — the **SHA-256 hash** of the bearer credential, `UNIQUE`. The
+  raw token is a high-entropy random value shown to the client once, at login,
+  and **never stored**; only its hash is. The auth middleware resolves a
+  presented token by hashing it and matching by equality. A fast hash is right
+  here — the token has nothing to brute-force — unlike `accounts.password_hash`,
+  which is bcrypt because a login secret is low-entropy.
 - `issued_at`, `expires_at` — Unix seconds.
 - `revoked_at` — Unix seconds, or `NULL` for an active session. Sessions record
   revocation as a timestamp rather than an `inactive` flag because the API

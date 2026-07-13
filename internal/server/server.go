@@ -16,7 +16,6 @@ package server
 import (
 	"context"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"time"
@@ -94,20 +93,12 @@ func New(db *sqlite.DB, version string, log *slog.Logger, opts ...Option) (*Serv
 }
 
 // Handler builds the routed http.Handler. The generated RegisterHandlers path
-// (api.HandlerFromMux) mounts every spec operation onto a net/http ServeMux,
-// wrapping the Server's StrictServerInterface with the auth middleware. /healthz
-// stays a plain stdlib handler (the liveness probe behaves exactly as the
-// bootstrap's did — text/plain "ok"), so it is dropped from the generated set to
-// avoid a duplicate registration. Cross-origin protection (stdlib CSRF) and the
-// request-id/logging/recovery chain wrap the whole mux.
+// (api.HandlerFromMux) mounts every spec operation — including the /healthz
+// liveness probe — onto a net/http ServeMux, wrapping the Server's
+// StrictServerInterface with the auth middleware. Cross-origin protection (stdlib
+// CSRF) and the request-id/logging/recovery chain wrap the whole mux.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
-
-	// The liveness probe: a plain stdlib handler, unchanged from the bootstrap.
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = io.WriteString(w, "ok\n")
-	})
 
 	// The generated strict handler: our StrictServerInterface wrapped with the
 	// per-operation auth middleware, plus JSON error envelopes for the body-decode
@@ -120,9 +111,8 @@ func (s *Server) Handler() http.Handler {
 			ResponseErrorHandlerFunc: s.strictResponseError,
 		},
 	)
-	// Mount the generated routes onto mux, skipping /healthz (registered above as
-	// the plain liveness probe) so the ServeMux is not asked to bind it twice.
-	api.HandlerFromMux(strict, skipHealthzMux{mux})
+	// Mount the generated routes onto mux.
+	api.HandlerFromMux(strict, mux)
 
 	// A catch-all so an unknown path returns the JSON error envelope rather than
 	// net/http's plain-text 404.
@@ -140,19 +130,6 @@ func (s *Server) Handler() http.Handler {
 	// recover panics, then apply CSRF. Recovery sits inside logging so a recovered
 	// panic is still logged with its final (500) status.
 	return chain(csrf.Handler(mux), withRequestID, withLogging(s.log), withRecovery)
-}
-
-// skipHealthzMux adapts an *http.ServeMux for api.HandlerFromMux so the generated
-// GET /healthz registration is dropped: /healthz is served by the plain liveness
-// handler registered separately (see Handler), and a ServeMux panics on a
-// duplicate pattern. Every other generated route is forwarded unchanged.
-type skipHealthzMux struct{ *http.ServeMux }
-
-func (m skipHealthzMux) HandleFunc(pattern string, handler func(http.ResponseWriter, *http.Request)) {
-	if pattern == "GET /healthz" {
-		return
-	}
-	m.ServeMux.HandleFunc(pattern, handler)
 }
 
 // handleNotFound renders the standard 404 envelope for any unrouted path.

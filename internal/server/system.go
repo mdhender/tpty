@@ -10,10 +10,9 @@ import (
 	"github.com/mdhender/tpty/internal/api"
 )
 
-// GetHealth serves GET /healthz (openapi.yaml: getHealth). In practice the plain
-// liveness handler registered in Handler serves /healthz (unchanged from the
-// bootstrap), so this generated method is not routed; it is implemented for
-// interface completeness and returns the same plain-text "ok".
+// GetHealth serves GET /healthz (openapi.yaml: getHealth): an unauthenticated
+// liveness probe that returns 200 with the plain-text body "ok" and does not
+// touch the database.
 func (s *Server) GetHealth(ctx context.Context, request api.GetHealthRequestObject) (api.GetHealthResponseObject, error) {
 	return api.GetHealth200TextResponse("ok\n"), nil
 }

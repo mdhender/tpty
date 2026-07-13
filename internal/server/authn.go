@@ -65,11 +65,11 @@ func (s *Server) Login(ctx context.Context, request api.LoginRequestObject) (api
 	now := s.now()
 	expiresAt := now.Add(sessionTTL)
 	if err := s.db.CreateSession(ctx, sqlite.Session{
-		ID:        id,
-		AccountID: account.ID,
-		Token:     token,
-		IssuedAt:  now,
-		ExpiresAt: expiresAt,
+		ID:          id,
+		AccountID:   account.ID,
+		HashedToken: hashToken(token),
+		IssuedAt:    now,
+		ExpiresAt:   expiresAt,
 	}); err != nil {
 		return nil, fmt.Errorf("login: create session: %w", err)
 	}

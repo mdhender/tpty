@@ -12,7 +12,7 @@ import (
 )
 
 // sessionColumns is the fixed SELECT list scanSession expects, in order.
-const sessionColumns = "id, account_id, token, issued_at, expires_at, revoked_at"
+const sessionColumns = "id, account_id, hashed_token, issued_at, expires_at, revoked_at"
 
 // scanSession reads a session from the current row, whose columns are the
 // sessionColumns in order. The nullable revoked_at maps to the zero time.
@@ -22,19 +22,19 @@ func scanSession(stmt *sqlite.Stmt) Session {
 		revoked = unixOrZero(stmt.ColumnInt64(5))
 	}
 	return Session{
-		ID:        stmt.ColumnText(0),
-		AccountID: stmt.ColumnInt64(1),
-		Token:     stmt.ColumnText(2),
-		IssuedAt:  unixOrZero(stmt.ColumnInt64(3)),
-		ExpiresAt: unixOrZero(stmt.ColumnInt64(4)),
-		RevokedAt: revoked,
+		ID:          stmt.ColumnText(0),
+		AccountID:   stmt.ColumnInt64(1),
+		HashedToken: stmt.ColumnText(2),
+		IssuedAt:    unixOrZero(stmt.ColumnInt64(3)),
+		ExpiresAt:   unixOrZero(stmt.ColumnInt64(4)),
+		RevokedAt:   revoked,
 	}
 }
 
 // CreateSession persists a new session. The caller (the auth layer) supplies the
-// opaque id, the account, the raw token (stored as-is — the schema keeps the
-// high-entropy token unhashed), and the issue/expiry times. A duplicate id or
-// token returns ErrConflict.
+// opaque id, the account, the token hash (only the hash is stored — the raw token
+// is shown once at login and never persisted), and the issue/expiry times. A
+// duplicate id or token hash returns ErrConflict.
 func (db *DB) CreateSession(ctx context.Context, s Session) error {
 	conn, err := db.Get(ctx)
 	if err != nil {
@@ -43,8 +43,8 @@ func (db *DB) CreateSession(ctx context.Context, s Session) error {
 	defer db.Put(conn)
 
 	err = sqlitex.Execute(conn,
-		"INSERT INTO sessions (id, account_id, token, issued_at, expires_at) VALUES (?, ?, ?, ?, ?)",
-		&sqlitex.ExecOptions{Args: []any{s.ID, s.AccountID, s.Token, unixSeconds(s.IssuedAt), unixSeconds(s.ExpiresAt)}})
+		"INSERT INTO sessions (id, account_id, hashed_token, issued_at, expires_at) VALUES (?, ?, ?, ?, ?)",
+		&sqlitex.ExecOptions{Args: []any{s.ID, s.AccountID, s.HashedToken, unixSeconds(s.IssuedAt), unixSeconds(s.ExpiresAt)}})
 	if err != nil {
 		if isConstraint(err) {
 			return fmt.Errorf("create session: %w", ErrConflict)
@@ -65,16 +65,17 @@ func (db *DB) GetSession(ctx context.Context, id string) (Session, error) {
 	return getSessionWhere(conn, "id = ?", id)
 }
 
-// GetActiveSessionByToken resolves a presented bearer token to a session that is
-// neither revoked nor expired as of now. A missing, revoked, or expired session
-// all return ErrRecordNotFound, so authentication cannot distinguish them.
-func (db *DB) GetActiveSessionByToken(ctx context.Context, token string, now time.Time) (Session, error) {
+// GetActiveSessionByToken resolves a presented bearer token — supplied as its
+// SHA-256 hash — to a session that is neither revoked nor expired as of now. A
+// missing, revoked, or expired session all return ErrRecordNotFound, so
+// authentication cannot distinguish them.
+func (db *DB) GetActiveSessionByToken(ctx context.Context, hashedToken string, now time.Time) (Session, error) {
 	conn, err := db.Get(ctx)
 	if err != nil {
 		return Session{}, err
 	}
 	defer db.Put(conn)
-	s, err := getSessionWhere(conn, "token = ?", token)
+	s, err := getSessionWhere(conn, "hashed_token = ?", hashedToken)
 	if err != nil {
 		return Session{}, err
 	}

@@ -106,7 +106,7 @@ func (s *Server) authMiddleware(f api.StrictHandlerFunc, operationID string) api
 			writeError(w, r, http.StatusUnauthorized, codeUnauthorized, "authentication required")
 			return nil, nil
 		}
-		session, err := s.db.GetActiveSessionByToken(ctx, raw, s.now())
+		session, err := s.db.GetActiveSessionByToken(ctx, hashToken(raw), s.now())
 		if err != nil {
 			if !errors.Is(err, sqlite.ErrRecordNotFound) {
 				logger(r).ErrorContext(ctx, "auth: resolve session", "err", err)

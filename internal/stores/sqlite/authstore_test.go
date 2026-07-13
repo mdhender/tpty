@@ -83,8 +83,10 @@ func TestSessionStoreLifecycle(t *testing.T) {
 		t.Fatalf("InsertAccount: %v", err)
 	}
 
-	mk := func(sid, token string, expires time.Time) {
-		if err := db.CreateSession(ctx, Session{ID: sid, AccountID: id, Token: token, IssuedAt: now, ExpiresAt: expires}); err != nil {
+	// The store resolves by equality on the stored value; hashing happens a layer
+	// up (the server), so these fixtures use plain strings as the "hashed" tokens.
+	mk := func(sid, hashedToken string, expires time.Time) {
+		if err := db.CreateSession(ctx, Session{ID: sid, AccountID: id, HashedToken: hashedToken, IssuedAt: now, ExpiresAt: expires}); err != nil {
 			t.Fatalf("CreateSession %q: %v", sid, err)
 		}
 	}

@@ -4,6 +4,7 @@ package server
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
@@ -13,12 +14,17 @@ import (
 
 // A session has two independent opaque strings, both drawn from crypto/rand:
 //
-//   - the token, the bearer credential the client presents. Unlike ecv6, T'Pty
-//     stores it AS-IS (not hashed): it is high-entropy and resolved by equality
-//     against sessions.token (see api/conventions.md and the SQL schema), so
-//     revocation is immediate and no per-request hashing is needed.
+//   - the token, the bearer credential the client presents. Only its SHA-256 hash
+//     is stored (sessions.hashed_token); the raw token is shown to the client once,
+//     at login, and never persisted. It is resolved on each request by hashing the
+//     presented value and matching by equality.
 //   - the id, the session's public handle used in /me/sessions URLs, which is not
 //     a credential and can be listed freely.
+//
+// The token is high-entropy (256 bits), so a fast hash (SHA-256) is the correct
+// choice: there is nothing to brute-force, and resolving a bearer credential on
+// every request must be cheap. This is why the token uses SHA-256 while an
+// account secret uses bcrypt.
 const (
 	// tokenBytes is the token's entropy in bytes (256 bits).
 	tokenBytes = 32
@@ -26,15 +32,22 @@ const (
 	sessionIDBytes = 16
 )
 
-// newToken mints a fresh opaque session token — the raw bearer credential — as a
-// URL-safe base64 string. It is stored as-is and shown to the client once, at
-// login.
+// newToken mints a fresh opaque session token — the raw bearer credential shown
+// to the client once — as a URL-safe base64 string.
 func newToken() (string, error) {
 	b := make([]byte, tokenBytes)
 	if _, err := rand.Read(b); err != nil {
 		return "", fmt.Errorf("new token: %w", err)
 	}
 	return base64.RawURLEncoding.EncodeToString(b), nil
+}
+
+// hashToken returns the hex-encoded SHA-256 of a raw token — the form stored in
+// sessions.hashed_token and looked up on each authenticated request. Hashing is
+// deterministic, so the same token always maps to the same stored value.
+func hashToken(raw string) string {
+	sum := sha256.Sum256([]byte(raw))
+	return hex.EncodeToString(sum[:])
 }
 
 // newSessionID mints a fresh opaque public session id (not a credential).

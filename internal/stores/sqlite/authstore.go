@@ -42,16 +42,17 @@ type Account struct {
 }
 
 // Session is a server-side bearer session. ID is the opaque public identifier
-// used in the API to address a session; Token is the bearer credential the
-// client presents, stored as-is (not hashed) and resolved by equality. RevokedAt
-// is the zero time while the session is active.
+// used in the API to address a session; HashedToken is the SHA-256 hash of the
+// bearer credential the client presents (the raw token is shown once, at login,
+// and never stored) and is resolved by equality. RevokedAt is the zero time while
+// the session is active.
 type Session struct {
-	ID        string
-	AccountID int64
-	Token     string
-	IssuedAt  time.Time
-	ExpiresAt time.Time
-	RevokedAt time.Time
+	ID          string
+	AccountID   int64
+	HashedToken string
+	IssuedAt    time.Time
+	ExpiresAt   time.Time
+	RevokedAt   time.Time
 }
 
 // Revoked reports whether the session has been revoked.
