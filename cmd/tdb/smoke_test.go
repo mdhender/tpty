@@ -43,10 +43,10 @@ func TestSmokeEndToEnd(t *testing.T) {
 	}
 
 	// create account → the email is lowercased and the secret is bcrypt-hashed.
-	if err := createAccount(ctx, dir, "Alice@Example.com", "Alice", true, "hunter2"); err != nil {
+	if err := createAccount(ctx, dir, "Alice@Example.com", "Alice", true, false, "hunter2"); err != nil {
 		t.Fatalf("createAccount = %v, want nil", err)
 	}
-	hash, isAdmin, displayName := readAccount(t, ctx, dir, "alice@example.com")
+	hash, isAdmin, displayName, _ := readAccount(t, ctx, dir, "alice@example.com")
 	if hash == "" {
 		t.Fatal("account alice@example.com not found (email not lowercased?)")
 	}
@@ -66,10 +66,10 @@ func TestSmokeEndToEnd(t *testing.T) {
 	// create account → an omitted secret is generated (not an error) and stored
 	// as a real bcrypt hash; an omitted display name defaults to "anonymous
 	// account".
-	if err := createAccount(ctx, dir, "carol@example.com", "", false, ""); err != nil {
+	if err := createAccount(ctx, dir, "carol@example.com", "", false, false, ""); err != nil {
 		t.Fatalf("createAccount with a generated secret = %v, want nil", err)
 	}
-	carolHash, _, carolName := readAccount(t, ctx, dir, "carol@example.com")
+	carolHash, _, carolName, _ := readAccount(t, ctx, dir, "carol@example.com")
 	if !strings.HasPrefix(carolHash, "$2") {
 		t.Errorf("generated-secret account hash = %q, want a bcrypt hash", carolHash)
 	}
@@ -78,12 +78,12 @@ func TestSmokeEndToEnd(t *testing.T) {
 	}
 
 	// create account → duplicate email is rejected by the unique constraint.
-	if err := createAccount(ctx, dir, "alice@example.com", "", false, "x"); err == nil {
+	if err := createAccount(ctx, dir, "alice@example.com", "", false, false, "x"); err == nil {
 		t.Fatal("createAccount with a duplicate email = nil, want error")
 	}
 
 	// create account → a missing email is rejected.
-	if err := createAccount(ctx, dir, "", "", false, "x"); err == nil {
+	if err := createAccount(ctx, dir, "", "", false, false, "x"); err == nil {
 		t.Fatal("createAccount without an email = nil, want error")
 	}
 
@@ -161,7 +161,7 @@ func TestMigrateAndVerifyRejectMissing(t *testing.T) {
 	if err := verifyInstance(ctx, dir); err == nil {
 		t.Error("verifyInstance on an empty directory = nil, want error")
 	}
-	if err := createAccount(ctx, dir, "a@example.com", "", false, "x"); err == nil {
+	if err := createAccount(ctx, dir, "a@example.com", "", false, false, "x"); err == nil {
 		t.Error("createAccount on an empty directory = nil, want error")
 	}
 }
@@ -211,9 +211,9 @@ func mustNotExist(t *testing.T, path string) {
 	}
 }
 
-// readAccount returns the password_hash, is_admin, and display_name of the
-// account with the given email, or ("", 0, "") if none exists.
-func readAccount(t *testing.T, ctx context.Context, dir, email string) (hash string, isAdmin int, displayName string) {
+// readAccount returns the password_hash, is_admin, display_name, and inactive of
+// the account with the given email, or ("", 0, "", 0) if none exists.
+func readAccount(t *testing.T, ctx context.Context, dir, email string) (hash string, isAdmin int, displayName string, inactive int) {
 	t.Helper()
 	db, err := sqlite.OpenNonMigrating(ctx, dir)
 	if err != nil {
@@ -228,18 +228,117 @@ func readAccount(t *testing.T, ctx context.Context, dir, email string) (hash str
 	defer db.Put(conn)
 
 	err = sqlitex.ExecuteTransient(conn,
-		"SELECT password_hash, is_admin, display_name FROM accounts WHERE email = ?;",
+		"SELECT password_hash, is_admin, display_name, inactive FROM accounts WHERE email = ?;",
 		&sqlitex.ExecOptions{
 			Args: []any{email},
 			ResultFunc: func(stmt *zsqlite.Stmt) error {
 				hash = stmt.ColumnText(0)
 				isAdmin = stmt.ColumnInt(1)
 				displayName = stmt.ColumnText(2)
+				inactive = stmt.ColumnInt(3)
 				return nil
 			},
 		})
 	if err != nil {
 		t.Fatalf("read account: %v", err)
 	}
-	return hash, isAdmin, displayName
+	return hash, isAdmin, displayName, inactive
+}
+
+// runTDB drives the real command tree for a single invocation, exercising flag
+// parsing (including ff's IsSet, which update account relies on).
+func runTDB(t *testing.T, args ...string) error {
+	t.Helper()
+	return newRootCommand().ParseAndRun(context.Background(), args)
+}
+
+// TestCreateAccountInactive covers the --is-inactive flag on create account.
+func TestCreateAccountInactive(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	if err := runTDB(t, "create", "database", "--path", dir); err != nil {
+		t.Fatalf("create database: %v", err)
+	}
+	if err := runTDB(t, "create", "account", "--path", dir, "--email", "ghost@example.com", "--secret", "pw", "--is-inactive"); err != nil {
+		t.Fatalf("create account --is-inactive: %v", err)
+	}
+	if _, _, _, inactive := readAccount(t, ctx, dir, "ghost@example.com"); inactive != 1 {
+		t.Errorf("inactive = %d, want 1", inactive)
+	}
+}
+
+// TestUpdateAccountCommand drives update account end-to-end: the mutually
+// exclusive status flags, the tri-state (unset leaves status alone), and each
+// field change, verified by reading the row back.
+func TestUpdateAccountCommand(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	if err := runTDB(t, "create", "database", "--path", dir); err != nil {
+		t.Fatalf("create database: %v", err)
+	}
+	if err := runTDB(t, "create", "account", "--path", dir, "--email", "boss@example.com", "--display-name", "Boss", "--secret", "startpw"); err != nil {
+		t.Fatalf("create account: %v", err)
+	}
+
+	// --active and --inactive together are rejected.
+	if err := runTDB(t, "update", "account", "--path", dir, "--email", "boss@example.com", "--active", "--inactive"); err == nil {
+		t.Error("update account --active --inactive = nil, want mutually-exclusive error")
+	}
+
+	// No change requested is rejected.
+	if err := runTDB(t, "update", "account", "--path", dir, "--email", "boss@example.com"); err == nil {
+		t.Error("update account with no changes = nil, want error")
+	}
+
+	// --inactive deactivates; a later field-only update leaves status alone.
+	if err := runTDB(t, "update", "account", "--path", dir, "--email", "boss@example.com", "--inactive"); err != nil {
+		t.Fatalf("update --inactive: %v", err)
+	}
+	if _, _, _, inactive := readAccount(t, ctx, dir, "boss@example.com"); inactive != 1 {
+		t.Fatalf("after --inactive, inactive = %d, want 1", inactive)
+	}
+	if err := runTDB(t, "update", "account", "--path", dir, "--email", "boss@example.com", "--new-display-name", "Big Boss"); err != nil {
+		t.Fatalf("update --new-display-name: %v", err)
+	}
+	if _, _, dn, inactive := readAccount(t, ctx, dir, "boss@example.com"); dn != "Big Boss" || inactive != 1 {
+		t.Errorf("after display-only update: display=%q inactive=%d, want \"Big Boss\" and 1 (status untouched)", dn, inactive)
+	}
+
+	// --active reactivates.
+	if err := runTDB(t, "update", "account", "--path", dir, "--email", "boss@example.com", "--active"); err != nil {
+		t.Fatalf("update --active: %v", err)
+	}
+	if _, _, _, inactive := readAccount(t, ctx, dir, "boss@example.com"); inactive != 0 {
+		t.Errorf("after --active, inactive = %d, want 0", inactive)
+	}
+
+	// An invalid new display name is rejected.
+	if err := runTDB(t, "update", "account", "--path", dir, "--email", "boss@example.com", "--new-display-name", "1bad"); err == nil {
+		t.Error("update with an invalid display name = nil, want error")
+	}
+
+	// A new email moves the row; the old address no longer resolves.
+	if err := runTDB(t, "update", "account", "--path", dir, "--email", "boss@example.com", "--new-email", "Chief@Example.com"); err != nil {
+		t.Fatalf("update --new-email: %v", err)
+	}
+	if h, _, _, _ := readAccount(t, ctx, dir, "chief@example.com"); h == "" {
+		t.Error("account not found under the new (lowercased) email")
+	}
+	if h, _, _, _ := readAccount(t, ctx, dir, "boss@example.com"); h != "" {
+		t.Error("account still resolves under the old email")
+	}
+
+	// A new secret replaces the hash.
+	if err := runTDB(t, "update", "account", "--path", dir, "--email", "chief@example.com", "--new-secret", "freshpw"); err != nil {
+		t.Fatalf("update --new-secret: %v", err)
+	}
+	hash, _, _, _ := readAccount(t, ctx, dir, "chief@example.com")
+	if err := bcrypt.CompareHashAndPassword([]byte(hash), []byte("freshpw")); err != nil {
+		t.Errorf("new secret does not verify: %v", err)
+	}
+
+	// Updating an account that does not exist is an error.
+	if err := runTDB(t, "update", "account", "--path", dir, "--email", "nobody@example.com", "--inactive"); err == nil {
+		t.Error("update of a missing account = nil, want error")
+	}
 }

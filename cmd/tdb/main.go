@@ -58,6 +58,8 @@ func main() {
 //	├── create
 //	│   ├── database    create and migrate a new database
 //	│   └── account     insert an account with a bcrypt password hash
+//	├── update
+//	│   └── account     change an existing account's fields
 //	├── migrate
 //	│   ├── up          migrate an existing database up
 //	│   ├── verify      check the schema version equals the expected version
@@ -91,6 +93,7 @@ func newRootCommand() *ff.Command {
 
 	root.Subcommands = []*ff.Command{
 		newCreateCommand(rootFlags, path),
+		newUpdateCommand(rootFlags, path),
 		newMigrateCommand(rootFlags, path),
 		newBackupCommand(rootFlags, path),
 		newCompactCommand(rootFlags, path),
@@ -113,6 +116,14 @@ func requirePath(path string) error {
 		return fmt.Errorf("--path is required")
 	}
 	return nil
+}
+
+// isFlagSet reports whether the named flag was actually set (on the command line
+// or from its environment variable), as opposed to holding its default. It lets
+// a command tell "the operator asked for this value" from "this is the default".
+func isFlagSet(fs *ff.FlagSet, name string) bool {
+	f, ok := fs.GetFlag(name)
+	return ok && f.IsSet()
 }
 
 // newCreateCommand builds the "create" resource group and its subcommands.
@@ -276,6 +287,7 @@ func newCreateAccountCommand(parent *ff.FlagSet, path *string) *ff.Command {
 	email := fs.StringLong("email", "", "the account's `email` (lowercased before saving)")
 	displayName := fs.StringLong("display-name", "", "how the person wants to be addressed (default: anonymous account)")
 	admin := fs.BoolLong("is-admin", "make the account an administrator (default: false)")
+	inactive := fs.BoolLong("is-inactive", "create the account inactive (default: false)")
 	// secret resolves from TDB_SECRET when not passed on the command line; when
 	// still empty a passphrase is generated and printed.
 	secret := fs.StringLong("secret", "", "the account's password `secret` (or set TDB_SECRET; generated if omitted)")
@@ -291,7 +303,71 @@ func newCreateAccountCommand(parent *ff.FlagSet, path *string) *ff.Command {
 			if err := requirePath(*path); err != nil {
 				return err
 			}
-			return createAccount(ctx, *path, *email, *displayName, *admin, *secret)
+			return createAccount(ctx, *path, *email, *displayName, *admin, *inactive, *secret)
+		},
+	}
+}
+
+// newUpdateCommand builds the "update" resource group and its subcommands.
+func newUpdateCommand(parent *ff.FlagSet, path *string) *ff.Command {
+	updateFlags := ff.NewFlagSet("update").SetParent(parent)
+	update := &ff.Command{
+		Name:      "update",
+		Usage:     "tdb update [FLAGS] SUBCOMMAND ...",
+		ShortHelp: "update an account",
+		Flags:     updateFlags,
+		Exec: func(ctx context.Context, args []string) error {
+			// No subcommand selected; show help.
+			return ff.ErrHelp
+		},
+	}
+	update.Subcommands = []*ff.Command{
+		newUpdateAccountCommand(updateFlags, path),
+	}
+	return update
+}
+
+func newUpdateAccountCommand(parent *ff.FlagSet, path *string) *ff.Command {
+	fs := ff.NewFlagSet("account").SetParent(parent)
+	email := fs.StringLong("email", "", "the `email` identifying the account to update")
+	newEmail := fs.StringLong("new-email", "", "a new `email` (lowercased before saving)")
+	newDisplayName := fs.StringLong("new-display-name", "", "a new display `name`")
+	newSecret := fs.StringLong("new-secret", "", "a new password `secret`")
+	// active/inactive are ordinary bool flags (a bare flag sets it true). We do
+	// not rely on a default value — the account's status changes only when the
+	// operator sets one of them, detected via isFlagSet — so a missing flag never
+	// forces active vs inactive.
+	active := fs.BoolLong("active", "mark the account active (mutually exclusive with --inactive)")
+	inactive := fs.BoolLong("inactive", "mark the account inactive (mutually exclusive with --active)")
+	return &ff.Command{
+		Name:      "account",
+		Usage:     "tdb update account [FLAGS]",
+		ShortHelp: "change an existing account's fields",
+		Flags:     fs,
+		Exec: func(ctx context.Context, args []string) error {
+			if err := noArgs(args); err != nil {
+				return err
+			}
+			if err := requirePath(*path); err != nil {
+				return err
+			}
+			// --active and --inactive are complementary (active == !inactive) and
+			// mutually exclusive. A flag's default value is not an instruction: the
+			// account's status changes only when the operator actually sets one of
+			// them, which ff reports via IsSet.
+			activeSet, inactiveSet := isFlagSet(fs, "active"), isFlagSet(fs, "inactive")
+			var setInactive *bool
+			switch {
+			case activeSet && inactiveSet:
+				return fmt.Errorf("--active and --inactive are mutually exclusive")
+			case inactiveSet:
+				v := *inactive
+				setInactive = &v
+			case activeSet:
+				v := !*active
+				setInactive = &v
+			}
+			return updateAccount(ctx, *path, *email, *newEmail, *newDisplayName, *newSecret, setInactive)
 		},
 	}
 }
@@ -418,7 +494,7 @@ func compactInstance(ctx context.Context, path string) error {
 // from the player's in-game order password (players.password, a plaintext shared
 // secret) and we care more about securing this one — it authenticates a person
 // to the server, not a turn's orders to the engine.
-func createAccount(ctx context.Context, path, email, displayName string, admin bool, secret string) error {
+func createAccount(ctx context.Context, path, email, displayName string, admin, inactive bool, secret string) error {
 	email = strings.ToLower(strings.TrimSpace(email))
 	if email == "" {
 		return fmt.Errorf("--email is required")
@@ -445,15 +521,61 @@ func createAccount(ctx context.Context, path, email, displayName string, admin b
 		return fmt.Errorf("hash password: %w", err)
 	}
 
-	id, err := sqlite.CreateAccount(ctx, path, email, displayName, string(hash), admin)
+	id, err := sqlite.CreateAccount(ctx, path, email, displayName, string(hash), admin, inactive)
 	if err != nil {
 		return err
 	}
 
-	fmt.Printf("created account %q (id=%d, admin=%t)\n", email, id, admin)
+	fmt.Printf("created account %q (id=%d, admin=%t, inactive=%t)\n", email, id, admin, inactive)
 	if generated {
 		fmt.Printf("generated secret: %s\n", secret)
 	}
+	return nil
+}
+
+// updateAccount applies the requested changes to the account identified by
+// email. An empty string flag means "leave unchanged"; setInactive is nil unless
+// the operator asked to change the active status. A new secret is bcrypt-hashed
+// here before the store persists it (the store persists credentials, it does not
+// hash them). The store validates a new display name.
+func updateAccount(ctx context.Context, path, email, newEmail, newDisplayName, newSecret string, setInactive *bool) error {
+	email = strings.ToLower(strings.TrimSpace(email))
+	if email == "" {
+		return fmt.Errorf("--email is required")
+	}
+
+	var upd sqlite.AccountUpdate
+	if newEmail != "" {
+		e := strings.ToLower(strings.TrimSpace(newEmail))
+		upd.NewEmail = &e
+	}
+	if newDisplayName != "" {
+		upd.NewDisplayName = &newDisplayName
+	}
+	if newSecret != "" {
+		hash, err := bcrypt.GenerateFromPassword([]byte(newSecret), bcrypt.DefaultCost)
+		if err != nil {
+			return fmt.Errorf("hash password: %w", err)
+		}
+		h := string(hash)
+		upd.NewPasswordHash = &h
+	}
+	upd.Inactive = setInactive
+
+	if upd.NewEmail == nil && upd.NewDisplayName == nil && upd.NewPasswordHash == nil && upd.Inactive == nil {
+		return fmt.Errorf("nothing to update: pass at least one of --new-email, --new-display-name, --new-secret, --active, --inactive")
+	}
+
+	if exists, err := sqlite.InstanceExists(path); err != nil {
+		return err
+	} else if !exists {
+		return fmt.Errorf("no instance in %s (use create database)", path)
+	}
+
+	if err := sqlite.UpdateAccount(ctx, path, email, upd); err != nil {
+		return err
+	}
+	fmt.Printf("updated account %q\n", email)
 	return nil
 }
 

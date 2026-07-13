@@ -9,7 +9,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/mdhender/tpty/internal/cerrs"
 	"zombiezen.com/go/sqlite"
@@ -28,6 +31,12 @@ const (
 	// with the directory (see requireInstance), so callers see "no instance in
 	// <dir>".
 	ErrNotExist = cerrs.Error("no instance")
+	// ErrInvalidDisplayName is returned by ValidateDisplayName (and the account
+	// writers that call it) when a display name breaks the sql-schema.md rule.
+	ErrInvalidDisplayName = cerrs.Error("invalid display name")
+	// ErrNoAccount is returned by UpdateAccount when no account has the given
+	// email. It is wrapped with the email.
+	ErrNoAccount = cerrs.Error("no account")
 )
 
 // dbFilename is the file name the store owns under a persistent instance's
@@ -316,13 +325,47 @@ func Compact(ctx context.Context, dir string) error {
 	return nil
 }
 
+// ValidateDisplayName enforces the display-name rule from sql-schema.md: a
+// leading letter, then letters, digits, spaces, dashes, and apostrophes; valid
+// UTF-8; nothing that could confuse JSON or enable an XSS attack. It is a store
+// action so every writer of a display name applies the identical rule. It
+// returns ErrInvalidDisplayName (wrapped with the reason) on any violation.
+func ValidateDisplayName(name string) error {
+	if name == "" {
+		return fmt.Errorf("%w: must not be empty", ErrInvalidDisplayName)
+	}
+	if !utf8.ValidString(name) {
+		return fmt.Errorf("%w: must be valid UTF-8", ErrInvalidDisplayName)
+	}
+	for i, r := range name {
+		if i == 0 {
+			if !unicode.IsLetter(r) {
+				return fmt.Errorf("%w: must start with a letter", ErrInvalidDisplayName)
+			}
+			continue
+		}
+		switch {
+		case unicode.IsLetter(r), unicode.IsDigit(r), r == ' ', r == '-', r == '\'':
+			// allowed
+		default:
+			return fmt.Errorf("%w: invalid character %q", ErrInvalidDisplayName, r)
+		}
+	}
+	return nil
+}
+
 // CreateAccount inserts a server account into the instance in dir and returns
 // its new id. It opens the instance migrating (accounts land against the current
 // schema). The caller supplies the already-computed passwordHash — the store
-// persists credentials, it does not hash them — and a lowercased, validated
-// email; the schema enforces email uniqueness. isAdmin is stored as the 0/1
-// boolean the schema expects.
-func CreateAccount(ctx context.Context, dir, email, displayName, passwordHash string, isAdmin bool) (int64, error) {
+// persists credentials, it does not hash them — and a lowercased email; the
+// schema enforces email uniqueness. The display name is validated
+// (ValidateDisplayName). isAdmin and isInactive are stored as the 0/1 booleans
+// the schema expects.
+func CreateAccount(ctx context.Context, dir, email, displayName, passwordHash string, isAdmin, isInactive bool) (int64, error) {
+	if err := ValidateDisplayName(displayName); err != nil {
+		return 0, err
+	}
+
 	db, err := OpenPersistent(ctx, dir)
 	if err != nil {
 		return 0, err
@@ -335,17 +378,90 @@ func CreateAccount(ctx context.Context, dir, email, displayName, passwordHash st
 	}
 	defer db.Put(conn)
 
-	admin := 0
-	if isAdmin {
-		admin = 1
-	}
 	if err := sqlitex.ExecuteTransient(conn,
-		"INSERT INTO accounts (email, display_name, password_hash, is_admin) VALUES (?, ?, ?, ?);",
-		&sqlitex.ExecOptions{Args: []any{email, displayName, passwordHash, admin}},
+		"INSERT INTO accounts (email, display_name, password_hash, is_admin, inactive) VALUES (?, ?, ?, ?, ?);",
+		&sqlitex.ExecOptions{Args: []any{email, displayName, passwordHash, boolToInt(isAdmin), boolToInt(isInactive)}},
 	); err != nil {
 		return 0, fmt.Errorf("sqlite: create account: %w", err)
 	}
 	return conn.LastInsertRowID(), nil
+}
+
+// AccountUpdate carries the optional changes for UpdateAccount. A nil field is
+// left unchanged; a non-nil field is written.
+type AccountUpdate struct {
+	NewEmail        *string // lowercased by the caller
+	NewDisplayName  *string // validated by UpdateAccount
+	NewPasswordHash *string // already bcrypt-hashed by the caller
+	Inactive        *bool   // the account's active flag; nil = leave as-is
+}
+
+// UpdateAccount applies upd to the account with the given email in the instance
+// in dir. Only the non-nil fields of upd are written, and updated_at is bumped.
+// It validates a new display name (ValidateDisplayName) and rejects an empty new
+// email or password. It returns ErrNoAccount (wrapped with email) when no
+// account matches, and errors if upd requests no change.
+func UpdateAccount(ctx context.Context, dir, email string, upd AccountUpdate) error {
+	if upd.NewDisplayName != nil {
+		if err := ValidateDisplayName(*upd.NewDisplayName); err != nil {
+			return err
+		}
+	}
+	if upd.NewEmail != nil && strings.TrimSpace(*upd.NewEmail) == "" {
+		return fmt.Errorf("sqlite: update account: new email must not be empty")
+	}
+	if upd.NewPasswordHash != nil && *upd.NewPasswordHash == "" {
+		return fmt.Errorf("sqlite: update account: new password must not be empty")
+	}
+
+	var sets []string
+	var args []any
+	if upd.NewEmail != nil {
+		sets, args = append(sets, "email = ?"), append(args, *upd.NewEmail)
+	}
+	if upd.NewDisplayName != nil {
+		sets, args = append(sets, "display_name = ?"), append(args, *upd.NewDisplayName)
+	}
+	if upd.NewPasswordHash != nil {
+		sets, args = append(sets, "password_hash = ?"), append(args, *upd.NewPasswordHash)
+	}
+	if upd.Inactive != nil {
+		sets, args = append(sets, "inactive = ?"), append(args, boolToInt(*upd.Inactive))
+	}
+	if len(sets) == 0 {
+		return fmt.Errorf("sqlite: update account: no changes requested")
+	}
+	sets = append(sets, "updated_at = unixepoch()")
+	query := "UPDATE accounts SET " + strings.Join(sets, ", ") + " WHERE email = ?;"
+	args = append(args, email)
+
+	db, err := OpenPersistent(ctx, dir)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	conn, err := db.Get(ctx)
+	if err != nil {
+		return err
+	}
+	defer db.Put(conn)
+
+	if err := sqlitex.ExecuteTransient(conn, query, &sqlitex.ExecOptions{Args: args}); err != nil {
+		return fmt.Errorf("sqlite: update account: %w", err)
+	}
+	if conn.Changes() == 0 {
+		return fmt.Errorf("%w %s", ErrNoAccount, email)
+	}
+	return nil
+}
+
+// boolToInt maps a Go bool to the 0/1 integer the schema's boolean columns use.
+func boolToInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }
 
 // Get borrows a connection from the pool, blocking until one is available or ctx

@@ -520,3 +520,49 @@ func tableExists(t *testing.T, db *DB, name string) bool {
 	}
 	return found
 }
+
+// TestValidateDisplayName pins the display-name rule from sql-schema.md: a
+// leading letter, then letters, digits, spaces, dashes, and apostrophes.
+func TestValidateDisplayName(t *testing.T) {
+	valid := []string{"Alice", "anonymous account", "O'Brien", "Anne-Marie", "Bob 3rd", "Zoe"}
+	for _, s := range valid {
+		if err := ValidateDisplayName(s); err != nil {
+			t.Errorf("ValidateDisplayName(%q) = %v, want nil", s, err)
+		}
+	}
+	invalid := []string{"", " leading", "3names", "-dash", "bad<script>", "quote\"here", "tab\tchar"}
+	for _, s := range invalid {
+		if err := ValidateDisplayName(s); !errors.Is(err, ErrInvalidDisplayName) {
+			t.Errorf("ValidateDisplayName(%q) = %v, want ErrInvalidDisplayName", s, err)
+		}
+	}
+}
+
+// TestUpdateAccountErrors covers UpdateAccount's own guards: a missing account,
+// an invalid new display name, and an empty change set.
+func TestUpdateAccountErrors(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	db, err := CreatePersistent(ctx, dir)
+	if err != nil {
+		t.Fatalf("CreatePersistent: %v", err)
+	}
+	db.Close()
+	if _, err := CreateAccount(ctx, dir, "a@example.com", "Alice", "hash", false, false); err != nil {
+		t.Fatalf("CreateAccount: %v", err)
+	}
+
+	inact := true
+	if err := UpdateAccount(ctx, dir, "nobody@example.com", AccountUpdate{Inactive: &inact}); !errors.Is(err, ErrNoAccount) {
+		t.Errorf("UpdateAccount(missing) = %v, want ErrNoAccount", err)
+	}
+
+	bad := "1nope"
+	if err := UpdateAccount(ctx, dir, "a@example.com", AccountUpdate{NewDisplayName: &bad}); !errors.Is(err, ErrInvalidDisplayName) {
+		t.Errorf("UpdateAccount(bad display) = %v, want ErrInvalidDisplayName", err)
+	}
+
+	if err := UpdateAccount(ctx, dir, "a@example.com", AccountUpdate{}); err == nil {
+		t.Error("UpdateAccount with no changes = nil, want error")
+	}
+}

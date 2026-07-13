@@ -81,10 +81,34 @@ tdb create account --path path/to/instance --email alice@example.com
   stored in the clear or shown again.
 - `--display-name` defaults to `anonymous account`.
 - `--is-admin` makes the account an administrator (default: not).
+- `--is-inactive` creates the account already deactivated (default: active).
 
 The account password is bcrypt-hashed and is separate from a player's in-game
 order password — see [Players]({{< relref "/docs/reference/players.md" >}}) and
 [SQL Schema]({{< relref "/docs/reference/sql-schema.md" >}}).
+
+## Update an account
+
+Change an existing account, identified by its current `--email`:
+
+```sh
+tdb update account --path path/to/instance --email alice@example.com \
+  --new-display-name "Alice Cooper"
+```
+
+Pass only the fields you want to change; anything you omit is left as-is. You
+must pass at least one change.
+
+- `--new-email` — a new address (lowercased before saving; must stay unique).
+- `--new-display-name` — a new display name; it must not be empty and must pass
+  the display-name rules.
+- `--new-secret` — a new password (bcrypt-hashed before saving).
+- `--active` / `--inactive` — deactivate or reactivate the account. They are
+  **mutually exclusive**, and the account's status is changed *only* when you
+  pass one of them; a plain field update leaves it untouched.
+
+Deactivating an account (a soft delete) keeps the row and its history; the
+person can no longer log in until you reactivate it with `--active`.
 
 ## Back up a database
 
