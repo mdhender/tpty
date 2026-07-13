@@ -14,9 +14,6 @@ prompts/
 /tpty
 /dist/
 
-# generated from api/openapi.yaml via `make generate`; wired in by #76, not #71
-/internal/api/openapi.gen.go
-
 # Hugo
 /public/
 /resources/_gen/

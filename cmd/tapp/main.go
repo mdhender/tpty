@@ -14,7 +14,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -25,6 +24,7 @@ import (
 
 	"github.com/mdhender/tpty"
 	"github.com/mdhender/tpty/internal/dotenv"
+	"github.com/mdhender/tpty/internal/server"
 	"github.com/mdhender/tpty/internal/stores/sqlite"
 	"github.com/peterbourgon/ff/v4"
 	"github.com/peterbourgon/ff/v4/ffhelp"
@@ -179,13 +179,18 @@ func serve(ctx context.Context, opts serveOptions) error {
 	}
 	defer db.Close()
 
+	srv, err := server.New(db, tpty.Version().String(), slog.Default())
+	if err != nil {
+		return fmt.Errorf("build server: %w", err)
+	}
+
 	addr := net.JoinHostPort(opts.host, opts.port)
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		return fmt.Errorf("listen on %s: %w", addr, err)
 	}
 
-	return serveOn(ctx, ln, newMux())
+	return serveOn(ctx, ln, srv.Handler())
 }
 
 // openServeDB opens the database for the given --db-path. The sentinel
@@ -230,18 +235,6 @@ func seedDevAdmin(ctx context.Context, db *sqlite.DB) error {
 		return fmt.Errorf("seed dev admin: %w", err)
 	}
 	return nil
-}
-
-// newMux builds the HTTP router. For now it exposes only GET /healthz, an
-// unauthenticated liveness check; every other request 404s. The RESTish API and
-// auth arrive in #76.
-func newMux() *http.ServeMux {
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = io.WriteString(w, "ok\n")
-	})
-	return mux
 }
 
 // serveOn runs an HTTP server for handler on ln until ctx is cancelled, then
