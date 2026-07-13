@@ -19,4 +19,5 @@ task. Come here when you already know the basics and need to get something done.
   {{< card link="process-and-advance-a-turn" title="Process and advance a turn" subtitle="Run the engine over a turn and move the game forward" >}}
   {{< card link="generate-turn-reports" title="Generate turn reports" subtitle="Produce each active player's start-of-turn report" >}}
   {{< card link="administer-a-database" title="Administer a database with tdb" subtitle="Create, migrate, back up, and compact a SQLite database" >}}
+  {{< card link="run-the-application-server" title="Run the application server with tapp" subtitle="Start, health-check, and shut down the tapp server" >}}
 {{< /cards >}}
