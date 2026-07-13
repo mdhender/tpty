@@ -1,0 +1,805 @@
+openapi: 3.0.3
+info:
+  title: T'Pty Application Server API
+  description: >-
+    REST API for the T'Pty application server. This document is the source of
+    truth for the wire contract; handlers, clients, and request validation are
+    driven from and checked against it. Change the spec first, then the code.
+
+
+    This version covers the **application** surface only: system metadata,
+    authentication and the session lifecycle, the authenticated account's own
+    context, and account administration. It is grounded in the server-side
+    `accounts` and `sessions` tables and the `memberships` boundary table
+    described in the [SQL Schema reference](../content/docs/reference/sql-schema.md).
+
+
+    The **game engine** surface (games, turns, orders, and the world read model)
+    is intentionally not part of this contract yet; it lands in a later pass with
+    the engine. The only membership-facing route here is a read-only projection of
+    the caller's own seats (`GET /me/games`); creating games and managing rosters
+    is not exposed on the application server yet.
+
+
+    Authentication is an opaque, server-side **session token** presented as a
+    bearer credential. Unlike the account secret (a bcrypt hash), the session
+    token is high-entropy and stored **as-is, not hashed**; the server resolves it
+    by equality against the `sessions` table on every request, so revocation is
+    immediate. Routes are unversioned and served from the root.
+  version: 0.1.0
+servers:
+  - url: /
+    description: API base (unversioned; served from the root, matching GET /healthz)
+tags:
+  - name: System
+    description: Health and service metadata
+  - name: Auth
+    description: Authentication and session lifecycle
+  - name: Me
+    description: The authenticated account's own context
+  - name: Accounts
+    description: Account administration (admin only)
+  - name: Admin
+    description: Administrative server operations (admin only)
+security:
+  - sessionToken: []
+paths:
+  /healthz:
+    get:
+      tags: [System]
+      operationId: getHealth
+      summary: Liveness check
+      description: >-
+        Unauthenticated liveness probe. Returns `200` with the plain-text body
+        `ok` while the process is serving; it does not touch the database.
+      security: []
+      responses:
+        '200':
+          description: Service is running
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "ok\n"
+  /version:
+    get:
+      tags: [System]
+      operationId: getVersion
+      summary: Application and database schema version
+      description: >-
+        Returns the running server's application version and the schema version
+        of the open database (SQLite's `user_version`, equal to the number of
+        migrations applied). Public; no authentication required.
+      security: []
+      responses:
+        '200':
+          description: Version information
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VersionResponse'
+  /auth/login:
+    post:
+      tags: [Auth]
+      operationId: login
+      summary: Exchange credentials for a session token
+      description: >-
+        Verifies an email + secret against the account's stored bcrypt hash and,
+        on success, mints an opaque server-side session. The returned token is
+        presented as a bearer credential on subsequent requests. Email is matched
+        case-insensitively (stored lowercased). An inactive account cannot log in.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Login succeeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthSession'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /auth/logout:
+    post:
+      tags: [Auth]
+      operationId: logout
+      summary: Revoke the current session (or all of the account's sessions)
+      description: >-
+        Revokes the session behind the presented token by setting its
+        `revoked_at`. With `allSessions: true` every active session for the
+        account is revoked instead. Revocation is immediate — the token(s) fail on
+        the next request.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LogoutRequest'
+      responses:
+        '204':
+          description: Logout accepted
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /me:
+    get:
+      tags: [Me]
+      operationId: getMe
+      summary: Get the authenticated account
+      description: >-
+        Returns the caller's account. This is an application-domain projection
+        only — it carries no in-game data. Per-game seats are surfaced by
+        `GET /me/games`.
+      responses:
+        '200':
+          description: The authenticated account
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    patch:
+      tags: [Me]
+      operationId: updateMe
+      summary: Update the authenticated account's own profile
+      description: >-
+        Self-service update of the caller's non-sensitive profile — currently
+        just `displayName` (`accounts.display_name`). Sensitive identity and
+        credential changes are deliberately separate routes that require the
+        current secret: `POST /me/email` and `POST /me/secret`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateMeRequest'
+      responses:
+        '200':
+          description: The updated account
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /me/email:
+    post:
+      tags: [Me]
+      operationId: updateMyEmail
+      summary: Change the authenticated account's email
+      description: >-
+        Self-service email change. Because email is the login identity, the
+        caller must supply `currentSecret`, verified before the change — this
+        required confirmation is why email is its own route rather than a field on
+        `PATCH /me`. The new email is lowercased and must be unique. Existing
+        sessions are not revoked (the secret is unchanged).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangeEmailRequest'
+      responses:
+        '200':
+          description: The updated account
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /me/secret:
+    post:
+      tags: [Me]
+      operationId: updateMySecret
+      summary: Change the authenticated account's secret
+      description: >-
+        Self-service secret change. The caller supplies `currentSecret`, verified
+        against the stored bcrypt hash before the new secret is applied. On
+        success the account's other sessions are revoked, so a stolen session
+        cannot outlive the secret it was created under. The account state is
+        re-read fresh (an account deactivated since its token was issued cannot
+        change its secret).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangeSecretRequest'
+      responses:
+        '204':
+          description: Secret changed
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /me/sessions:
+    get:
+      tags: [Me]
+      operationId: listMySessions
+      summary: List the authenticated account's active sessions
+      description: >-
+        Returns the caller's active sessions (neither revoked nor expired), each
+        with metadata for recognizing it. Raw tokens are never returned. The
+        session behind the current request is marked `current: true`.
+      responses:
+        '200':
+          description: The caller's active sessions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListSessionsResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /me/sessions/{sessionId}:
+    parameters:
+      - $ref: '#/components/parameters/SessionId'
+    delete:
+      tags: [Me]
+      operationId: revokeMySession
+      summary: Revoke one of the authenticated account's sessions
+      description: >-
+        Revokes a single session belonging to the caller — the "log out this
+        device" counterpart to `/auth/logout`. Only the caller's own sessions are
+        revocable; an unknown session, or one owned by another account, yields
+        `404` rather than revealing its existence. Idempotent while the record
+        persists.
+      responses:
+        '204':
+          description: Session revoked
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /me/games:
+    get:
+      tags: [Me]
+      operationId: listMyGames
+      summary: List the games the authenticated account holds a seat in
+      description: >-
+        Returns the games the caller holds a `memberships` seat in, each with the
+        caller's `playerId` (the membership id) in that game and whether they are
+        its GM (`is_gm`). Scoped to the caller; a read-only projection of the
+        caller's memberships. Inactive seats are omitted.
+      responses:
+        '200':
+          description: The caller's games
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListMyGamesResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /accounts:
+    get:
+      tags: [Accounts]
+      operationId: listAccounts
+      summary: List accounts
+      description: Admin only. Returns all accounts, ordered by id.
+      responses:
+        '200':
+          description: Accounts
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListAccountsResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Accounts]
+      operationId: createAccount
+      summary: Create an account
+      description: >-
+        Admin only. Creates an account, inactive and non-admin unless `isActive`
+        / `isAdmin` are set. `email` is lowercased and must be unique. If `secret`
+        is omitted a random one is generated and returned once in
+        `generatedSecret`; only its bcrypt hash is stored. An account created
+        without a secret cannot log in until one is set (a fail-closed default).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAccountRequest'
+      responses:
+        '201':
+          description: Account created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateAccountResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /accounts/{accountId}:
+    parameters:
+      - $ref: '#/components/parameters/AccountId'
+    get:
+      tags: [Accounts]
+      operationId: getAccount
+      summary: Get an account by id
+      description: Admin only.
+      responses:
+        '200':
+          description: Account details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags: [Accounts]
+      operationId: updateAccount
+      summary: Update an account
+      description: >-
+        Admin only. Every field is optional; a present field is set, an absent
+        field is left unchanged, and at least one field is required. `email` is
+        lowercased and must remain unique. A new `secret` must be at least 8
+        characters (this is also the admin-only account-recovery path — there is
+        no self-service reset).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateAccountRequest'
+      responses:
+        '200':
+          description: Account updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /accounts/{accountId}/sessions:
+    parameters:
+      - $ref: '#/components/parameters/AccountId'
+    get:
+      tags: [Accounts]
+      operationId: listAccountSessions
+      summary: List an account's active sessions
+      description: >-
+        Admin only. Lists the target account's active sessions. The read side of
+        admin session management; pairs with the revoke operations to terminate a
+        compromised or deactivated account's live sessions.
+      responses:
+        '200':
+          description: The account's active sessions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListSessionsResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Accounts]
+      operationId: revokeAccountSessions
+      summary: Revoke all of an account's sessions
+      description: >-
+        Admin only. Revokes every active session for the target account — the
+        "force logout everywhere" action for a compromised or deactivated
+        account. Immediate; idempotent.
+      responses:
+        '204':
+          description: Sessions revoked
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /accounts/{accountId}/sessions/{sessionId}:
+    parameters:
+      - $ref: '#/components/parameters/AccountId'
+      - $ref: '#/components/parameters/SessionId'
+    delete:
+      tags: [Accounts]
+      operationId: revokeAccountSession
+      summary: Revoke one of an account's sessions
+      description: >-
+        Admin only. Revokes a single session of the target account. A session not
+        belonging to the account yields `404`. Immediate; idempotent.
+      responses:
+        '204':
+          description: Session revoked
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /admin/sessions/purge:
+    post:
+      tags: [Admin]
+      operationId: purgeSessions
+      summary: Purge expired sessions
+      description: >-
+        Admin only. Deletes session records whose `expires_at` is already in the
+        past, reclaiming space. Expired sessions no longer authenticate, so
+        removing them affects neither active sessions nor revocation. Returns the
+        number of records removed.
+      responses:
+        '200':
+          description: Purge completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PurgeSessionsResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+components:
+  securitySchemes:
+    sessionToken:
+      type: http
+      scheme: bearer
+      description: >-
+        An opaque, server-side session token minted by `/auth/login` and
+        presented as `Authorization: Bearer <token>`. Not a JWT — it carries no
+        claims. It is high-entropy and stored **as-is, not hashed** (unlike the
+        bcrypt `accounts.password_hash`); the server resolves it by equality
+        against the `sessions` table on every request, so revocation is immediate.
+        A session authenticates when `revoked_at IS NULL AND expires_at > now`.
+  parameters:
+    AccountId:
+      name: accountId
+      in: path
+      required: true
+      description: An account's globally-unique id (`accounts.id`).
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+    SessionId:
+      name: sessionId
+      in: path
+      required: true
+      description: Opaque session identifier (`sessions.id`).
+      schema:
+        type: string
+        minLength: 1
+  responses:
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unauthorized:
+      description: Missing, expired, or invalid credentials
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Forbidden:
+      description: Authenticated but not allowed to access this resource
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Resource was not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Conflict:
+      description: Request conflicts with current state
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              description: Stable, machine-readable error code.
+              example: unauthorized
+            message:
+              type: string
+              description: Human-readable explanation.
+              example: session token is missing or invalid
+            requestId:
+              type: string
+              description: Correlation id for the request, for support and log tracing.
+    VersionResponse:
+      type: object
+      required: [application, database]
+      properties:
+        application:
+          type: string
+          description: Server application version (semver, with pre-release when set).
+          example: 0.13.1-beta
+        database:
+          $ref: '#/components/schemas/DatabaseVersion'
+    DatabaseVersion:
+      type: object
+      required: [schemaVersion]
+      properties:
+        schemaVersion:
+          type: integer
+          format: int32
+          minimum: 0
+          description: Migrations applied to the open database (SQLite user_version).
+          example: 4
+    LoginRequest:
+      type: object
+      required: [email, secret]
+      properties:
+        email:
+          type: string
+          format: email
+          minLength: 1
+          description: Matched case-insensitively; stored lowercased.
+        secret:
+          type: string
+          format: password
+          minLength: 1
+    AuthSession:
+      type: object
+      required: [token, tokenType, expiresAt]
+      properties:
+        token:
+          type: string
+          description: Opaque session token; present as a bearer credential. Shown once.
+        tokenType:
+          type: string
+          enum: [Bearer]
+        expiresAt:
+          type: string
+          format: date-time
+          description: When the session expires.
+    LogoutRequest:
+      type: object
+      properties:
+        allSessions:
+          type: boolean
+          default: false
+          description: Revoke every session for the account rather than just the current one.
+    UpdateMeRequest:
+      type: object
+      description: Non-sensitive profile fields the caller may set on themselves.
+      required: [displayName]
+      properties:
+        displayName:
+          type: string
+          minLength: 1
+    ChangeEmailRequest:
+      type: object
+      required: [currentSecret, newEmail]
+      properties:
+        currentSecret:
+          type: string
+          format: password
+          minLength: 1
+          description: The caller's current secret, verified before the change.
+        newEmail:
+          type: string
+          format: email
+          minLength: 1
+          description: New email; lowercased and must be unique.
+    ChangeSecretRequest:
+      type: object
+      required: [currentSecret, newSecret]
+      properties:
+        currentSecret:
+          type: string
+          format: password
+          minLength: 1
+          description: The account's existing secret, verified before the change.
+        newSecret:
+          type: string
+          format: password
+          minLength: 8
+          description: The replacement secret (at least 8 characters).
+    Session:
+      type: object
+      description: >-
+        An active session (neither revoked nor expired). Raw tokens are never
+        included.
+      required: [id, issuedAt, expiresAt]
+      properties:
+        id:
+          type: string
+          description: Opaque session identifier.
+        issuedAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+        current:
+          type: boolean
+          description: True for the session behind the current request (self listings only).
+    ListSessionsResponse:
+      type: object
+      required: [sessions]
+      properties:
+        sessions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Session'
+    PurgeSessionsResponse:
+      type: object
+      required: [purged]
+      properties:
+        purged:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Number of expired session records removed.
+          example: 12
+    Account:
+      type: object
+      description: >-
+        An application-domain account (`accounts` table). `isAdmin` mirrors the
+        server-level `is_admin` flag; it never carries per-game roles, which are
+        surfaced by `GET /me/games`.
+      required: [id, email, isActive, isAdmin]
+      properties:
+        id:
+          type: integer
+          format: int64
+        email:
+          type: string
+          format: email
+        displayName:
+          type: string
+          description: How the person wants to be addressed; may be empty.
+        isActive:
+          type: boolean
+          description: The negation of the stored `inactive` flag.
+        isAdmin:
+          type: boolean
+          description: Server-level administrator (`accounts.is_admin`).
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    AccountResponse:
+      type: object
+      required: [account]
+      properties:
+        account:
+          $ref: '#/components/schemas/Account'
+    ListAccountsResponse:
+      type: object
+      required: [accounts]
+      properties:
+        accounts:
+          type: array
+          items:
+            $ref: '#/components/schemas/Account'
+    CreateAccountRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+          minLength: 1
+          description: Lowercased and must be unique.
+        secret:
+          type: string
+          format: password
+          minLength: 8
+          description: Optional; if omitted a random one is generated and returned once.
+        displayName:
+          type: string
+          minLength: 1
+        isActive:
+          type: boolean
+          default: false
+        isAdmin:
+          type: boolean
+          default: false
+    CreateAccountResponse:
+      type: object
+      required: [account]
+      properties:
+        account:
+          $ref: '#/components/schemas/Account'
+        generatedSecret:
+          type: string
+          description: >-
+            The plaintext secret, present only when one was generated. Shown once;
+            only its bcrypt hash is stored.
+    UpdateAccountRequest:
+      type: object
+      description: >-
+        Partial update; a present field is set, an absent field is left
+        unchanged. At least one field is required.
+      properties:
+        email:
+          type: string
+          format: email
+          description: Lowercased and must remain unique.
+        displayName:
+          type: string
+        isActive:
+          type: boolean
+        isAdmin:
+          type: boolean
+        secret:
+          type: string
+          format: password
+          minLength: 8
+          description: New secret (at least 8 characters); the admin-only recovery path.
+    MyGame:
+      type: object
+      description: >-
+        A game the caller holds a seat in, projected with the caller's seat.
+        Grounded in `memberships` joined to `games`; carries only game identity
+        (`games.code`), no engine state.
+      required: [id, code, playerId, isGm]
+      properties:
+        id:
+          type: integer
+          format: int64
+          description: The game's id (`games.id`).
+        code:
+          type: string
+          description: The game's human-facing slug (`games.code`).
+        playerId:
+          type: integer
+          format: int64
+          description: The caller's seat id in this game (`memberships.id`).
+        isGm:
+          type: boolean
+          description: Whether the caller is the GM of this game (`memberships.is_gm`).
+    ListMyGamesResponse:
+      type: object
+      required: [games]
+      properties:
+        games:
+          type: array
+          items:
+            $ref: '#/components/schemas/MyGame'
