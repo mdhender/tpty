@@ -13,8 +13,9 @@ game's master seeds.
 - The **origin** is the center hex, at axial coordinates `(0, 0)`.
 - The grid grows outward from the origin in concentric **rings**. Ring `0` is
   the origin. Ring `k` (for `k > 0`) contains `6k` provinces.
-- The grid may expand outward beyond the generated rings as the world is
-  explored.
+- The grid is **finite**: it ends at ring `numberOfRings`, and its outer ring
+  **wraps** to the far side rather than falling off the edge (see
+  [Map Wraparound]({{< relref "/docs/reference/map-wraparound.md" >}})).
 
 ## Coordinates
 
@@ -217,4 +218,5 @@ the data directory:
 ## See also
 
 - [Determinism]({{< relref "/docs/reference/determinism.md" >}})
+- [Map Wraparound]({{< relref "/docs/reference/map-wraparound.md" >}})
 - [Glossary]({{< relref "/docs/reference/glossary.md" >}})

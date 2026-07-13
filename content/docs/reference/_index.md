@@ -18,6 +18,7 @@ reviewed and moved here.
   {{< card link="world-generation" title="World Generation" subtitle="How the hex world is generated from the master seeds" >}}
   {{< card link="determinism" title="Determinism" subtitle="Master seeds, streams, and the key-path addressing that keeps a game reproducible" >}}
   {{< card link="hex-geometry" title="Hex Geometry" subtitle="The apothem and the hex measurements derived from it" >}}
+  {{< card link="map-wraparound" title="Map Wraparound" subtitle="How the finite hex map wraps: leaving the outer ring re-enters on the far side" >}}
   {{< card link="players" title="Players" subtitle="Players in a game: identity, starting province, and order password" >}}
   {{< card link="factions" title="Factions" subtitle="Groups of entities under one controller — a player or an NPC" >}}
   {{< card link="entities" title="Entities" subtitle="Actors in the world: identity, owning faction, and location" >}}

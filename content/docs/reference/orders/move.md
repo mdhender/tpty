@@ -63,12 +63,16 @@ This is the MVP movement rule. In this pass **every step is one adjacent hex at
 7 days**: terrain has no effect on cost and there is no map-boundary check, so a
 step always reaches the adjacent province regardless of its terrain or whether it
 has been generated yet. Per-terrain movement cost and map-bounds handling are
-left as future work; this section will be revised when they land.
+left as future work; this section will be revised when they land. When map-bounds
+handling lands, a step off the outer ring will wrap to the far side per
+[Map Wraparound]({{< relref "/docs/reference/map-wraparound.md" >}}); the engine
+does not wrap yet.
 
 ## See also
 
 - [Orders]({{< relref "/docs/reference/orders" >}})
 - [Hold]({{< relref "/docs/reference/orders/hold.md" >}})
 - [World Generation]({{< relref "/docs/reference/world-generation.md" >}})
+- [Map Wraparound]({{< relref "/docs/reference/map-wraparound.md" >}})
 - [Turn Processing]({{< relref "/docs/reference/turn-processing.md" >}})
 - [Entities]({{< relref "/docs/reference/entities.md" >}})

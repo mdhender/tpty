@@ -72,5 +72,6 @@ kilometer measurements are unchanged.
 ## See also
 
 - [World Generation]({{< relref "/docs/reference/world-generation.md" >}}) — the grid the hexes form
+- [Map Wraparound]({{< relref "/docs/reference/map-wraparound.md" >}}) — how the finite grid's edge wraps
 - [Why the Hex Is Measured by Apothem]({{< relref "/docs/explanation/why-the-hex-is-measured-by-apothem.md" >}}) — why one measurement is authoritative
 - [Why This Game Uses a 5 km Hex Apothem]({{< relref "/docs/explanation/why-this-game-uses-a-5-km-hex-apothem.md" >}}) — why the apothem is 5 km
