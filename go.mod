@@ -4,7 +4,7 @@ go 1.26.4
 
 require (
 	github.com/fogleman/gg v1.3.0
-	github.com/getkin/kin-openapi v0.142.0
+	github.com/getkin/kin-openapi v0.144.0
 	github.com/joho/godotenv v1.5.1
 	github.com/maloquacious/semver v0.4.1
 	github.com/mdhender/ottomap v0.15.0
@@ -21,7 +21,6 @@ require (
 	github.com/go-openapi/swag/jsonname v0.25.5 // indirect
 	github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
-	github.com/imfing/hextra v0.12.3 // indirect
 	github.com/kr/pretty v0.3.1 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/ncruces/go-strftime v0.1.9 // indirect
